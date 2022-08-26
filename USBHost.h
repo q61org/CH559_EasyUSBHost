@@ -159,6 +159,7 @@ extern __xdata uint8_t receiveDataBuffer[];
 #define REPORT_USAGE_PAGE_VENDOR	0xff00
 
 void fillTxBuffer(const __code uint8_t *data, unsigned char len);
+void fillTxBuffer_xdata(const __xdata uint8_t *data, unsigned char len);
 unsigned char hostCtrlTransfer(unsigned char __xdata *DataBuf, unsigned short *RetLen, unsigned short maxLenght);
 unsigned char hostTransfer(unsigned char endp_pid, unsigned char tog, unsigned short timeout );
 void selectUSBDevice(uint8_t devIndex);

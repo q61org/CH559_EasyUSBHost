@@ -1,0 +1,12 @@
+*.hex
+*.hex.lf
+*.ihx
+*.lk
+*.map
+*.mem
+*.asm
+*.lst
+*.rel
+*.rst
+*.sym
+.vscode

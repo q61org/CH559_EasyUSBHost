@@ -3,8 +3,8 @@
 
 #include <stdint.h>
 
-#define RINGBUF_SIZE  64
-#define RINGBUF_SIZE_MASK  0x3f
+#define RINGBUF_SIZE  128
+#define RINGBUF_SIZE_MASK  0x7f
 
 struct ringbuf_t {
     uint8_t buf[RINGBUF_SIZE];

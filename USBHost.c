@@ -7,6 +7,7 @@
 #include "udev_util.h"
 #include "udev_hub.h"
 #include "udev_hid.h"
+#include "udev_ftdi.h"
 
 typedef const unsigned char __code *PUINT8C;
 
@@ -664,6 +665,7 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex, uint8_t pa
 			temp[i] = receiveDataBuffer[i];
 		i = ((PXUSB_CFG_DESCR)receiveDataBuffer)->bLength;
 		uint8_t iIndex = 0;
+		uint8_t doCallback = 0;
 
 		while (i < total - 1 && iIndex < MAX_INTERFACES_PER_DEVICE)
 		{
@@ -702,8 +704,13 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex, uint8_t pa
 							iface->ep_out = d->bEndpointAddress & 0x7f;
 						}
 
-						if (currentInterface->bInterfaceClass == USB_DEV_CLASS_HID) {
-							hiddevice_init_endpoint(dev, iface, d->bEndpointAddress);
+						if (currentInterface->bInterfaceClass == USB_DEV_CLASS_VEN_SPEC) {
+							if (ftdidevice_init_endpoint(dev, iface, d->bEndpointAddress) == 0) {
+								DEBUG_OUT("FTDI device registered\n");
+								doCallback = 1;
+							}
+						/*if (currentInterface->bInterfaceClass == USB_DEV_CLASS_HID) {
+							hiddevice_init_endpoint(dev, iface, d->bEndpointAddress);*/
 						} else if (currentInterface->bInterfaceClass == USB_DEV_CLASS_HUB) {
 							hubdevice_init_endpoint(dev, iface, d->bEndpointAddress);
 						}
@@ -734,7 +741,9 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex, uint8_t pa
 			i += desc[0];
 		}
 		dev->connected = 1;
-		callAttachCallback(addr - FIRST_USB_DEV_ID, dev, 1);
+		if (doCallback) {
+			callAttachCallback(addr - FIRST_USB_DEV_ID, dev, 1);
+		}
 		return ERR_SUCCESS;
 	}
 	DEBUG_OUT("connecting device failed. Error = %02X\n", s);
