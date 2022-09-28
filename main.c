@@ -253,14 +253,77 @@ void uartcmd_process(const __xdata char *cmd)
     }
 }
 
+static void passthrough_mode()
+{
+    P0_PU = 0xff;
+    P0_DIR = 0x80;
+    P1_PU = 0x7f;
+    P2_PU = 0x7f;
+    P2_DIR = 0x80;
+    P3_PU = 0xfd;
+    P3_DIR = 0x02;
+    P4_PU = 0xff;
+    PORT_CFG &= 0xf3; // set P2 and P3 to push-pull mode
+
+    P0 &= 0x7f;
+    delay(100);
+    P0 |= 0x80;
+
+    uint8_t rts_cur = 1;
+    uint8_t rts_last = 1;
+    uint8_t rts_decr = 0;
+    uint8_t ticks_last = ticks() & 0x0ff;
+
+    while (1) {
+        uint8_t p2p = P2;
+        uint8_t p3p = P3;
+        P2 = (p3p & 1) ? 0x80 : 0x00;
+        P3 = (P3 & 0xfd) | ((p2p & 0x40) ? 0x02 : 0x00);
+
+        uint8_t ticks_cur = ticks() & 0x0ff;
+        if (ticks_last != ticks_cur) {
+            ticks_last = ticks_cur;
+            rts_cur = (p3p & 0x04) >> 2;
+            if ((rts_cur == 0) && (rts_last == 1)) {
+                P0 = 0x00;
+                rts_decr = 32;
+            }
+            rts_last = rts_cur;
+            if (rts_decr > 0) {
+                if (--rts_decr == 0) {
+                    P0 = 0x80;
+                }
+            }
+        }
+
+        if(!(P4_IN & (1 << 6))) {
+            runBootloader();
+        }
+    }
+}
+
 void main()
 {
     if(!(P4_IN & (1 << 6))) {
         runBootloader();
     }
+    initClock();
     ticks_init();
     ET0 = 1;
+    P1_PU &= 0x7f;
+    EA = 1;
 
+    while (seconds() < 2) {
+        if(!(P4_IN & (1 << 6))) {
+            runBootloader();
+        }
+    }
+    if (P1 & 0x80) {
+        passthrough_mode();
+    }
+
+    EA = 0;
+    
     static __xdata uint32_t t_last = 255;
     //uint8_t s;
     static __xdata uint8_t uart_buf_pos = 0;
@@ -290,7 +353,7 @@ void main()
     // init others
     initClock();
     initUART0(230400, 0);
-    initUART1(115200);
+    initUART1(57600);
     DEBUG_OUT("======== Startup ========\n");
     //resetHubDevices(0);
     //resetHubDevices(1);
