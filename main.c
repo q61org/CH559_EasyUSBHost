@@ -23,7 +23,7 @@ typedef unsigned char  __data             UINT8D;
 
 
 #define VERSION_BYTE 0x01
-#define VERSION_STR  "v20220826 q61.org k.k."
+#define VERSION_STR  "experimental"
 
 
 // ==== TICKS ====
