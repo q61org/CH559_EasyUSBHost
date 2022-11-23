@@ -18,12 +18,12 @@ uint8_t __code s_keymap_us_s[30] = {
 uint8_t __code s_keymap_jp[30] = {
     '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
     0x0a, 0x1b, 0x08, 0x09, 0x20, '-', '^', '@', '[', ']', 
-    0, ';', ':', 0, ',', '.', '/', 0, 0, 0
+    ']', ';', ':', 0, ',', '.', '/', 0, 0, 0
 };
 uint8_t __code s_keymap_jp_s[30] = {
     '!', '"', '#', '$', '%', '&', '\'', '(', ')', 0, 
     0x0a, 0x1b, 0x08, 0xff, 0x20, '=', '~', '`', '{', '}', 
-    0, '+', '*', 0, '<', '>', '?', 0, 0, 0
+    '}', '+', '*', 0, '<', '>', '?', 0, 0, 0
 };
 uint8_t __code s_keymap_num[16] = {
     '/', '*', '-', '+', 0x0a, '1', '2', '3', 
@@ -90,7 +90,11 @@ uint8_t keymap_keynum_to_char(uint8_t keynum, uint8_t modifier, uint8_t locks, c
             keynum = s_keymap_num_ctrl[keynum - 0x59];
         }
     } else if (keynum == 0x87) {
-        cn = '_';
+        if (shifted) {
+            cn = '_';
+        } else {
+            cn = '\\';
+        }
     } else if (keynum == 0x89) {
         cn = (shifted) ? '|' : '\\';
     }
