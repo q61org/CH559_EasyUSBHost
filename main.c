@@ -190,10 +190,8 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
     DEBUG_OUT("CALLBACK: dev[%d] @%d, is_attach=%d\n", devIndex, dev->address, is_attach);
     p3_clear_interrupt();
     if (is_attach) {
-        for (uint8_t i = 0; i < dev->num_ifaces; i++) {
-            if (dev->iface[i].usage != Usage_KEYBOARD) {
-                continue;
-            }
+        if (dev->vid_h == 0x04 || dev->vid_l == 0x5e) {
+            DEBUG_OUT("CALLBACK: microsoft device\n");
             int8_t idx = findFreeKbdStateIndex();
             if (idx < 0) {
                 DEBUG_OUT("CALLBACK: no more keyboard!\n");
@@ -201,7 +199,29 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
             }
             g_kbd_devIndex[idx] = devIndex;
             g_kbd_devAddr[idx] = dev->address;
-            kbdparse_init(&g_kbd[idx]);
+            g_numKbds++;
+            DEBUG_OUT("CALLBACK: %d keyboard(s) now connected\n", g_numKbds);
+            uint8_t r = hiddevice_start_input(devIndex, 0);
+            DEBUG_OUT("start input: %d\n", r);
+        }
+    }
+#if 0
+        for (uint8_t i = 0; i < dev->num_ifaces; i++) {
+            DEBUG_OUT("CALLBACK: usage %d\n", dev->iface[i].usage);
+            if (dev->vid_h != 0x04 || dev->vid_l != 0x5e) {
+                continue;
+            }
+            /*if (dev->iface[i].usage != Usage_JOYSTICK) {
+                continue;
+            }*/
+            int8_t idx = findFreeKbdStateIndex();
+            if (idx < 0) {
+                DEBUG_OUT("CALLBACK: no more keyboard!\n");
+                return;
+            }
+            g_kbd_devIndex[idx] = devIndex;
+            g_kbd_devAddr[idx] = dev->address;
+            //kbdparse_init(&g_kbd[idx]);
             g_numKbds++;
             DEBUG_OUT("CALLBACK: %d keyboard(s) now connected\n", g_numKbds);
 
@@ -221,7 +241,10 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
                 break;
             }
             g_kbd[idx].locks = locks;
-            setHIDDeviceLED(devIndex, Usage_KEYBOARD, locks);
+
+            //uint8_t r = hiddevice_start_input(devIndex, Usage_JOYSTICK);
+            //DEBUG_OUT("start input: %d\n", r);
+        //    setHIDDeviceLED(devIndex, Usage_KEYBOARD, locks);
             if (g_raw_mode) {
                 ringbuf_write(&g_rb_out, bin2hexchar(dev->address >> 4));
                 ringbuf_write(&g_rb_out, bin2hexchar(dev->address));
@@ -232,7 +255,9 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
             }
             return;
         }
-    } else {
+    }
+#endif
+     else {
         for (uint8_t i = 0; i < kbd_maxcount(); i++) {
             if (g_kbd_devIndex[i] == (int8_t)devIndex) {
                 g_kbd_devIndex[i] = -1;
@@ -519,8 +544,16 @@ void main()
             static __xdata uint8_t buf[8];
             static KeyEvent evts[16];
             uint8_t nevts = 0;
-            uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], Usage_KEYBOARD, buf, sizeof(buf));
+            uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], Usage_JOYSTICK, buf, sizeof(buf));
             if (len > 0) {
+                DEBUG_OUT("pollHIDDev @%d [%d] ", targetKbdIndex, len);
+            	for (uint8_t i = 0; i < len; i++)
+	            {
+		            DEBUG_OUT("%02X ", buf[i]);
+	            }
+                DEBUG_OUT("\n");
+            }
+            /*if (len > 0) {
                 if (cfg_swapcaps()) kbdparse_hid_swapcaps(buf, len);
                 nevts = kbdparse_hidinput(kbd, ticks(), buf, len, evts, 16);
             }
@@ -612,7 +645,7 @@ void main()
                     }
                 }
                 DEBUG_OUT("\n");
-            }
+            }*/
         }
         for (uint8_t i = 0; i < MAX_NUM_KEYBOARDS; i++) {
             if (++targetKbdIndex >= kbd_maxcount()) {

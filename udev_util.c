@@ -81,7 +81,7 @@ void DEBUG_OUT_USB_REPORT_USAGE(uint8_t data)
 			DEBUG_OUT("Wheel");
 		break;
 		default:
-			DEBUG_OUT("unknown");
+			DEBUG_OUT("%x", data);
 	}
 }
 
@@ -143,7 +143,7 @@ void DEBUG_DUMP_USB_DEVICE(USBDevice *dev, uint8_t depth)
 		DEBUG_OUT("(");
 		DEBUG_OUT_USB_DEV_CLASS(iface->class);
 		DEBUG_OUT(")");
-		if (iface->class == USB_DEV_CLASS_HID) {
+		if (iface->class != USB_DEV_CLASS_HUB) {
 			DEBUG_OUT(" usage %d", iface->usage);
 			DEBUG_OUT("(");
 			DEBUG_OUT_USB_REPORT_USAGE(iface->usage);

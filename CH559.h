@@ -1581,6 +1581,7 @@ typedef UDISK_BOC_CSW __xdata *PXUDISK_BOC_CSW;
 
 #define	Usage_POINTER		  0x01
 #define	Usage_MOUSE				0x02
+#define Usage_JOYSTICK     0x04
 #define Game_Pad          0x05
 #define	Usage_KEYBOARD		0x06
 #define	Usage_X						0x30

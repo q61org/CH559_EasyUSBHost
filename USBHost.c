@@ -686,7 +686,7 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex, uint8_t pa
 					readInterface(rootHubIndex, currentInterface);
 					break;
 				case USB_DESCR_TYP_ENDP:
-					DEBUG_OUT("Endpoint descriptor found\n");
+					DEBUG_OUT("Endpoint descriptor found, subclass=%d\n", currentInterface->bInterfaceSubClass);
 					{
 						PXUSB_ENDP_DESCR d = (PXUSB_ENDP_DESCR)desc;
 						UDevInterface *iface = &dev->iface[iIndex++];
@@ -702,7 +702,7 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex, uint8_t pa
 							iface->ep_out = d->bEndpointAddress & 0x7f;
 						}
 
-						if (currentInterface->bInterfaceClass == USB_DEV_CLASS_HID) {
+						if (currentInterface->bInterfaceSubClass == 0 || currentInterface->bInterfaceSubClass == 93) {
 							hiddevice_init_endpoint(dev, iface, d->bEndpointAddress);
 						} else if (currentInterface->bInterfaceClass == USB_DEV_CLASS_HUB) {
 							hubdevice_init_endpoint(dev, iface, d->bEndpointAddress);
@@ -734,6 +734,7 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex, uint8_t pa
 			i += desc[0];
 		}
 		dev->connected = 1;
+		DEBUG_DUMP_USB_DEVICE(dev, 0);
 		callAttachCallback(addr - FIRST_USB_DEV_ID, dev, 1);
 		return ERR_SUCCESS;
 	}

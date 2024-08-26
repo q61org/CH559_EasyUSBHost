@@ -14,6 +14,7 @@ __code unsigned char  SetHIDIdleRequest[] = {USB_REQ_TYP_CLASS | USB_REQ_RECIP_I
 __code unsigned char  GetHIDReport[] = {USB_REQ_TYP_IN | USB_REQ_RECIP_INTERF, USB_GET_DESCRIPTOR, 0x00, USB_DESCR_TYP_REPORT, 0 /*interface*/, 0x00, 0xff, 0x00};
 __code unsigned char HIDSetReportRequest[] = { USB_REQ_TYP_CLASS | USB_REQ_RECIP_INTERF, HID_SET_REPORT, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
+__code unsigned char GIPStartInput[] = {0x05, 0x20, 0x01, 0x01, 0x00 };
 
 void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, UDevInterface *dst_iface)
 {
@@ -185,8 +186,9 @@ uint8_t pollHIDDevice(uint8_t devIndex, uint8_t usage, __xdata uint8_t *dst, uin
 	if (!d->connected) return 0;
 	for (uint8_t ii = 0; ii < d->num_ifaces; ii++) {
 		UDevInterface *iface = &d->iface[ii];
-		if (iface->class != USB_DEV_CLASS_HID) continue;
+		//if (iface->class != USB_DEV_CLASS_HID) continue;
 		if (iface->usage != usage) continue;
+		if (iface->ep_in == 0) continue;
 
 		selectUSBDevice(devIndex);
 		uint8_t s = hostTransfer(USB_PID_IN << 4 | (iface->ep_in & 0x7F), (iface->ep_in & 0x80) ? bUH_R_TOG | bUH_T_TOG : 0, 0);
@@ -231,6 +233,54 @@ uint8_t setHIDDeviceLED(uint8_t devIndex, uint8_t usage, uint8_t led)
 		break;
 	}
 	return rt;
+}
+
+uint8_t hiddevice_start_input(uint8_t devIndex, uint8_t usage)
+{
+	USBDevice *d = &USBdevs[devIndex];
+	if (!d->connected) return 0;
+	for (uint8_t ii = 0; ii < d->num_ifaces; ii++) {
+		UDevInterface *iface = &d->iface[ii];
+		//if (iface->class != USB_DEV_CLASS_HID) continue;
+		//if (iface->usage != usage) continue;
+		if (iface->ep_out & 0x7f != 4) continue;
+
+		selectUSBDevice(devIndex);
+		fillTxBuffer(GIPStartInput, sizeof(GIPStartInput));
+		UH_TX_LEN = sizeof(GIPStartInput);
+		uint8_t s = hostTransfer(USB_PID_OUT << 4 | (iface->ep_out & 0x7F), (iface->ep_out & 0x80) ? bUH_R_TOG | bUH_T_TOG : 0, 0);
+		if (s == ERR_SUCCESS) {
+			iface->ep_out ^= 0x80;
+			uint8_t len = UH_TX_LEN;
+			return (len != sizeof(GIPStartInput));
+		} else {
+			return s;
+		}
+	}
+	return 255;
+#if 0
+	uint8_t rt = 0;
+	unsigned short len = 0;
+	// setup method
+	USBDevice *d = &USBdevs[devIndex];
+	if (!d->connected) return 0;
+
+	for (uint8_t ii = 0; ii < d->num_ifaces; ii++) {
+		UDevInterface *iface = &d->iface[ii];
+		if (iface->class != USB_DEV_CLASS_VEN_SPEC) continue;
+		if (iface->usage != usage) continue;
+
+		selectUSBDevice(devIndex);
+		fillTxBuffer(GIPStartInput, sizeof(GIPStartInput));
+		((PXUSB_SETUP_REQ)TxBuffer)->wIndexL = iface->interface;
+		((PXUSB_SETUP_REQ)TxBuffer)->wLengthL = 1;
+		((PXUSB_SETUP_REQ)TxBuffer)->wValueH = 0x02;
+		//DEBUG_OUT("setting led 0x%02x", dt);
+		rt = hostCtrlTransfer(receiveDataBuffer, &len, 0);
+		break;
+	}
+	return rt;
+#endif
 }
 
 uint8_t hiddevice_init_endpoint(USBDevice *dev, UDevInterface *iface, uint8_t endpoint)

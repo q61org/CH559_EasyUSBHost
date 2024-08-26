@@ -16,9 +16,19 @@ struct udev_spec_hub_t
 };
 #define USB_HUB_MAX_DEPTH 4
 
+struct hid_report_t
+{
+	uint8_t size;
+	uint8_t count;
+	uint8_t usage;
+};
+
+#define UDEV_HID_MAX_NUM_REPORTS 8
+
 struct udev_spec_hid_t
 {
-	uint8_t x;
+	uint8_t num_reports;
+	struct hid_report_t reports[UDEV_HID_MAX_NUM_REPORTS];
 };
 
 struct udev_interface_t
