@@ -17,6 +17,7 @@ typedef unsigned char  __data             UINT8D;
 #include "ringbuf.h"
 #include "udev_hid.h"
 #include "udev_hub.h"
+#include "gamepad.h"
 
 
 #define VERSION_BYTE 0x04
@@ -164,6 +165,7 @@ uint8_t hexchar2bin(const __xdata char *str)
 int8_t __xdata g_kbd_devIndex[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_kbd_devAddr[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_numKbds;
+GamepadState g_state[MAX_NUM_KEYBOARDS];
 RingBuf g_rb_out;
 uint8_t __xdata g_raw_mode;
 uint8_t __xdata g_default_locks;
@@ -371,7 +373,7 @@ void main()
     P1_PU = 0xff;
     P2_PU = 0x3f;
     P2_DIR = 0x80;
-    P3_PU = 0xfb;
+    P3_PU = 0xff;
     P3_DIR = 0x00;
     P3 = 0xff;
     P4_PU = 0xff;
@@ -439,6 +441,7 @@ void main()
             case 7: initUART1(115200); break;
         }
     }
+    P3_PU = 0x03;
     EA = 1;
     init_watchdog(1);
 
@@ -452,6 +455,7 @@ void main()
     lasthubchecksecs = seconds();
     uint8_t lastsubtick = 0;
     uint8_t targetKbdIndex = 0;
+    static GamepadState padforled;
 
     while (1) {
         do {
@@ -511,6 +515,7 @@ void main()
             checkRootHubConnections();
             checkHubConnections();
             lasthubchecksecs = seconds();
+            g_need_poll = 1;
         }
         if (kbdconnected != (g_numKbds > 0)) {
             kbdconnected = (g_numKbds > 0);
@@ -528,18 +533,77 @@ void main()
         }
 
         if (kbd_isconnectedat(targetKbdIndex)) {
+            UDevInterface *iface;
             uint8_t devaddr = g_kbd_devAddr[targetKbdIndex];
             static __xdata uint8_t buf[16];
-            uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], Usage_JOYSTICK, buf, sizeof(buf));
+            uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], Usage_JOYSTICK, buf, sizeof(buf), &iface);
+            if (len > 0) {
+                uint8_t p3out = 0xff;
+                gamepad_parse_hid_data(iface, buf, len, &padforled);
+                static GamepadXY xy;
+                gamepad_get_unified_digital_xy(&padforled, &xy);
+                if (xy.y < 0x40) {
+                    p3out ^= 0x04;
+                } else if (xy.y >= 0xc0) {
+                    p3out ^= 0x08;
+                }
+                if (xy.x < 0x40) {
+                    p3out ^= 0x10;
+                } else if (xy.x >= 0xc0) {
+                    p3out ^= 0x20;
+                }
+                if (padforled.btns[0] != 0) {
+                    p3out ^= 0x40;
+                }
+                if (padforled.btns[1] != 0) {
+                    p3out ^= 0x80;
+                }
+                P3 = (P3 & 0x03) | p3out;
+                if (g_need_poll) {
+                    uint8_t i;
+                    GamepadState *pad = &g_state[targetKbdIndex];
+                    gamepad_state_update(pad, &padforled);
+                    DEBUG_OUT("gamepad:");
+                    for (i = 0; i < pad->num_xys; i++) {
+                        DEBUG_OUT(" xy[%d]{%x,%x}", i, pad->xys[i].x, pad->xys[i].y);
+                    }
+                    for (i = 0; i < pad->num_trigs; i++) {
+                        DEBUG_OUT(" tr[%d]{%x}", i, pad->trigs[i]);
+                    }
+                    DEBUG_OUT(" btns");
+                    for (i = 0; i < pad->num_btns; i++) {
+                        DEBUG_OUT(":%x", pad->btns[i]);
+                    }
+                    DEBUG_OUT("\n");
+                    g_need_poll = 0;
+                }
+            }
+#if 0
             if (len > 0 && g_need_poll) {
+                uint8_t i;
                 DEBUG_OUT("pollHIDDev @%d [%d] ", targetKbdIndex, len);
-            	for (uint8_t i = 0; i < len; i++)
+            	for (i = 0; i < len; i++)
 	            {
 		            DEBUG_OUT("%02X ", buf[i]);
 	            }
                 DEBUG_OUT("\n");
+                GamepadState *pad = &g_state[targetKbdIndex];
+                gamepad_parse_hid_data(iface, buf, len, pad);
+                DEBUG_OUT("gamepad:");
+                for (i = 0; i < pad->num_xys; i++) {
+                    DEBUG_OUT(" xy[%d]{%x,%x}", i, pad->xys[i].x, pad->xys[i].y);
+                }
+                for (i = 0; i < pad->num_trigs; i++) {
+                    DEBUG_OUT(" tr[%d]{%x}", i, pad->trigs[i]);
+                }
+                DEBUG_OUT(" btns");
+                for (i = 0; i < pad->num_btns; i++) {
+                    DEBUG_OUT(":%x", pad->btns[i]);
+                }
+                DEBUG_OUT("\n");
                 g_need_poll = 0;
             }
+#endif
             /*if (len > 0) {
                 if (cfg_swapcaps()) kbdparse_hid_swapcaps(buf, len);
                 nevts = kbdparse_hidinput(kbd, ticks(), buf, len, evts, 16);

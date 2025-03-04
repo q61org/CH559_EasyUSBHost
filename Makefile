@@ -6,8 +6,8 @@ PACKIHX = $(SDCC_PREFIX)/bin/packihx
 PROJNAME = CH559USB
 SDCCFLAGS = -V -mmcs51 --xstack --stack-auto --model-large --xram-size 0x0c00 --xram-loc 0x0400 --code-size 0xefff -DFREQ_SYS=48000000
 
-OBJS = main.rel util.rel USBHost.rel uart0.rel uart1.rel ringbuf.rel udev_hid.rel udev_hub.rel udev_util.rel
-HEADERS = util.h USBHost.h uart0.h uart1.h ringbuf.h sdcc_keywords.h udev_hid.h udev_hub.h udev_util.h
+OBJS = main.rel gamepad.rel util.rel USBHost.rel uart0.rel uart1.rel ringbuf.rel udev_hid.rel udev_hub.rel udev_util.rel
+HEADERS = gamepad.h util.h USBHost.h uart0.h uart1.h ringbuf.h sdcc_keywords.h udev_hid.h udev_hub.h udev_util.h
 
 all: $(PROJNAME).hex
 

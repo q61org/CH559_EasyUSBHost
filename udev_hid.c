@@ -37,6 +37,7 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 	uint8_t curspec_size = 0;
 	uint8_t curspec_count = 0;
 	uint8_t curspec_unit = 0;
+	uint16_t curspec_usagepage = 0;
 	while(i < length)
 	{
 		unsigned char j;
@@ -76,6 +77,7 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 				}
 				DEBUG_OUT("\n");
 				dst_iface->usagePage = vd;
+				curspec_usagepage = vd;
 			}
 			break;
 			case REPORT_USAGE:
@@ -122,13 +124,15 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 			break;
 			case REPORT_INPUT:
 				DEBUG_OUT("Input 0x%02lx\n", data);
-				if ((data & 0x02) == 0) {
+				if ((data & 0x02) == 0 || curspec_usagepage == REPORT_USAGE_PAGE_VENDOR) {
 					curspec_type = JOYSTICK_INPUT_TYPE_CONST;
 				} else {
 					if (curspec_size == 1) {
 						curspec_type = JOYSTICK_INPUT_TYPE_BUTTON;
 					} else if (curspec_size == 4 && (curspec_unit == 0x12 || curspec_unit == 0x14)) {
 						curspec_type = JOYSTICK_INPUT_TYPE_HAT_DEG;
+					} else if (curspec_count & 1) {
+						curspec_type = JOYSTICK_INPUT_TYPE_TRIGGER;
 					} else {
 						curspec_type = JOYSTICK_INPUT_TYPE_AXIS;
 					}
@@ -224,7 +228,7 @@ uint8_t getHIDDeviceIndexList(uint8_t usage, __xdata uint8_t *dst, uint8_t maxle
 	return rt;
 }
 
-uint8_t pollHIDDevice(uint8_t devIndex, uint8_t usage, __xdata uint8_t *dst, uint8_t maxlen)
+uint8_t pollHIDDevice(uint8_t devIndex, uint8_t usage, __xdata uint8_t *dst, uint8_t maxlen, UDevInterface **iface_dst)
 {
 	USBDevice *d = &USBdevs[devIndex];
 	if (!d->connected) return 0;
@@ -244,6 +248,7 @@ uint8_t pollHIDDevice(uint8_t devIndex, uint8_t usage, __xdata uint8_t *dst, uin
 				for (uint8_t i = 0; i < len; i++) {
 					dst[i] = RxBuffer[i];
 				}
+				*iface_dst = iface;
 				return len;
 			}
 		}
