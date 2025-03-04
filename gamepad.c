@@ -77,11 +77,21 @@ uint8_t gamepad_parse_hid_data(UDevInterface *iface, __xdata uint8_t *data, uint
                 }
                 break;
             case JOYSTICK_INPUT_TYPE_AXIS:
+            case JOYSTICK_INPUT_TYPE_AXIS_POSNEG_16BIT:
                 for (uint8_t k = 0; k < sp->count; k++) {
                     if (xyi >= GAMEPAD_MAX_NUM_XY) break;
                     if (bitpos >= bitlen) break;
+                    if (sp->type == JOYSTICK_INPUT_TYPE_AXIS_POSNEG_16BIT) {
+                        bitpos += 8;
+                    }
                     uint8_t b = gamepad_get_nbit(data, bitpos, sp->size);
                     bitpos += sp->size;
+                    if (sp->type == JOYSTICK_INPUT_TYPE_AXIS_POSNEG_16BIT) {
+                        b ^= 0x80;
+                        if (k & 1) {
+                            b = 0xff - b;
+                        }
+                    }
                     if (k & 1) {
                         dst->xys[xyi].y = b;
                         xyi++;
@@ -119,11 +129,43 @@ uint8_t gamepad_parse_hid_data(UDevInterface *iface, __xdata uint8_t *data, uint
                     dst->num_xys = ++xyi;
                 }
                 break;
+            case JOYSTICK_INPUT_TYPE_DPAD:
+                for (uint8_t k = 0; k < sp->count; k++) {
+                    if (xyi >= GAMEPAD_MAX_NUM_XY) break;
+                    if (bitpos >= bitlen) break;
+                    uint8_t b = gamepad_get_nbit(data, bitpos, sp->size);
+                    bitpos += sp->size;
+                    uint8_t dx = 0x80, dy = 0x80;
+                    if (b & 1) {
+                        dy = 0;
+                    } else if (b & 2) {
+                        dy = 0xff;
+                    }
+                    if (b & 4) {
+                        dx = 0;
+                    } else if (b & 8) {
+                        dx = 0xff;
+                    }
+                    dst->xys[xyi].x = dx;
+                    dst->xys[xyi].y = dy;
+                    dst->num_xys = ++xyi;
+                }
+                break;
             default:
                 break;
         }
     }
     return (bitpos >> 3);
+}
+
+void gamepad_state_clear(GamepadState *dst)
+{
+    dst->num_xys = 0;
+    dst->num_trigs = 0;
+    dst->num_btns = 0;
+    for (uint8_t i = 0; i < GAMEPAD_MAX_NUM_BUTTON; i++) {
+        dst->btns[i] = 0;
+    }
 }
 
 void gamepad_state_update(GamepadState *dst, GamepadState *src)

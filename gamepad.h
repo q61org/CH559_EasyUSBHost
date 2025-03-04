@@ -24,6 +24,7 @@ struct gamepad_state_t {
 typedef struct gamepad_state_t __xdata GamepadState;
 
 uint8_t gamepad_parse_hid_data(UDevInterface *iface, __xdata uint8_t *data, uint8_t len, GamepadState *dst);
+void gamepad_state_clear(GamepadState *dst);
 void gamepad_state_update(GamepadState *dst, GamepadState *src);
 void gamepad_get_unified_digital_xy(GamepadState *src, GamepadXY *dst);
 
