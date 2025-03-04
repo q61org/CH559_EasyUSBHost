@@ -399,7 +399,7 @@ void main()
     // init others
     initClock();
     initUART0(230400, 1);
-    initUART1(9600);
+    initUART1(19200);
     DEBUG_OUT("======== Startup ========\n");
     //resetHubDevices(0);
     //resetHubDevices(1);
@@ -515,7 +515,7 @@ void main()
             checkRootHubConnections();
             checkHubConnections();
             lasthubchecksecs = seconds();
-            g_need_poll = 1;
+            //g_need_poll = 1;
         }
         if (kbdconnected != (g_numKbds > 0)) {
             kbdconnected = (g_numKbds > 0);
@@ -563,6 +563,29 @@ void main()
                     uint8_t i;
                     GamepadState *pad = &g_state[targetKbdIndex];
                     gamepad_state_update(pad, &padforled);
+
+                    ringbuf_write(&g_rb_out, bin2hexchar(devaddr >> 4));
+                    ringbuf_write(&g_rb_out, bin2hexchar(devaddr));
+                    for (i = 0; i < pad->num_xys; i++) {
+                        ringbuf_write(&g_rb_out, 'X');
+                        ringbuf_write(&g_rb_out, bin2hexchar(pad->xys[i].x >> 4));
+                        ringbuf_write(&g_rb_out, bin2hexchar(pad->xys[i].x));
+                        ringbuf_write(&g_rb_out, bin2hexchar(pad->xys[i].y >> 4));
+                        ringbuf_write(&g_rb_out, bin2hexchar(pad->xys[i].y));
+                    }
+                    for (i = 0; i < pad->num_trigs; i++) {
+                        ringbuf_write(&g_rb_out, 'T');
+                        ringbuf_write(&g_rb_out, bin2hexchar(pad->trigs[i] >> 4));
+                        ringbuf_write(&g_rb_out, bin2hexchar(pad->trigs[i]));
+                    }
+                    ringbuf_write(&g_rb_out, 'N');
+                    for (i = 0; i < pad->num_btns; i++) {
+                        ringbuf_write(&g_rb_out, bin2hexchar(pad->btns[i] >> 4));
+                        ringbuf_write(&g_rb_out, bin2hexchar(pad->btns[i]));
+                    }
+                    ringbuf_write(&g_rb_out, ';');
+                    
+#if 0
                     DEBUG_OUT("gamepad:");
                     for (i = 0; i < pad->num_xys; i++) {
                         DEBUG_OUT(" xy[%d]{%x,%x}", i, pad->xys[i].x, pad->xys[i].y);
@@ -575,6 +598,7 @@ void main()
                         DEBUG_OUT(":%x", pad->btns[i]);
                     }
                     DEBUG_OUT("\n");
+#endif
                     g_need_poll = 0;
                 }
             }
