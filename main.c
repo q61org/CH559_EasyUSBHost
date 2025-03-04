@@ -173,6 +173,7 @@ uint8_t __xdata g_numKbds;
 RingBuf g_rb_out;
 uint8_t __xdata g_raw_mode;
 uint8_t __xdata g_default_locks;
+uint8_t __xdata g_need_poll;
 
 #define kbd_maxcount()           (sizeof(g_kbd_devIndex))
 #define kbd_isconnectedat(INDEX) (g_kbd_devIndex[INDEX] >= 0)
@@ -190,7 +191,7 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
     DEBUG_OUT("CALLBACK: dev[%d] @%d, is_attach=%d\n", devIndex, dev->address, is_attach);
     p3_clear_interrupt();
     if (is_attach) {
-        if (dev->vid_h == 0x04 || dev->vid_l == 0x5e) {
+        if (1) { //dev->vid_h == 0x04 || dev->vid_l == 0x5e) {
             DEBUG_OUT("CALLBACK: microsoft device\n");
             int8_t idx = findFreeKbdStateIndex();
             if (idx < 0) {
@@ -339,6 +340,10 @@ void uartcmd_process(const __xdata char *cmd)
             ringbuf_write(&g_rb_out, 0x0a);
         }
     }
+    if (cmd[0] == 'P') {
+        g_need_poll = 1;
+    }
+#if 0
     if (cmd[0] == 'C') {
         if (len != 5) return;
         uint8_t addr = hexchar2bin(&cmd[1]);
@@ -357,6 +362,7 @@ void uartcmd_process(const __xdata char *cmd)
         kbd_updatelocks(lk, 0);
         spi_update_statusreg(g_numKbds > 0, lk);
     }
+#endif
 }
 
 void main()
@@ -541,17 +547,18 @@ void main()
         if (kbd_isconnectedat(targetKbdIndex)) {
             KbdState *kbd = &g_kbd[targetKbdIndex];
             uint8_t devaddr = g_kbd_devAddr[targetKbdIndex];
-            static __xdata uint8_t buf[8];
+            static __xdata uint8_t buf[16];
             static KeyEvent evts[16];
             uint8_t nevts = 0;
             uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], Usage_JOYSTICK, buf, sizeof(buf));
-            if (len > 0) {
+            if (len > 0 && g_need_poll) {
                 DEBUG_OUT("pollHIDDev @%d [%d] ", targetKbdIndex, len);
             	for (uint8_t i = 0; i < len; i++)
 	            {
 		            DEBUG_OUT("%02X ", buf[i]);
 	            }
                 DEBUG_OUT("\n");
+                g_need_poll = 0;
             }
             /*if (len > 0) {
                 if (cfg_swapcaps()) kbdparse_hid_swapcaps(buf, len);

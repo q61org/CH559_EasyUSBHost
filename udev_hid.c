@@ -18,9 +18,25 @@ __code unsigned char GIPStartInput[] = {0x05, 0x20, 0x01, 0x01, 0x00 };
 
 void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, UDevInterface *dst_iface)
 {
+#define addjoyspec() { \
+	if (joyi < UDEV_HID_MAX_NUM_REPORTS) { \
+		dst_iface->spec.hid.reports[joyi].type = curspec_type; \
+		dst_iface->spec.hid.reports[joyi].size = curspec_size; \
+		dst_iface->spec.hid.reports[joyi].count = curspec_count; \
+		dst_iface->spec.hid.num_reports = ++joyi; \
+	} else { \
+		DEBUG_OUT("too many hid reports!\n"); \
+	} \
+}
+
 	unsigned short i = 0;
 	unsigned char level = 0;
 	unsigned char isUsageSet = 0;
+	uint8_t joyi = 0;
+	uint8_t curspec_type = 0;
+	uint8_t curspec_size = 0;
+	uint8_t curspec_count = 0;
+	uint8_t curspec_unit = 0;
 	while(i < length)
 	{
 		unsigned char j;
@@ -102,9 +118,22 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 			break;
 			case REPORT_UNIT:
 				DEBUG_OUT("Unit 0x%02lx\n", data);
+				curspec_unit = data;
 			break;
 			case REPORT_INPUT:
 				DEBUG_OUT("Input 0x%02lx\n", data);
+				if ((data & 0x02) == 0) {
+					curspec_type = JOYSTICK_INPUT_TYPE_CONST;
+				} else {
+					if (curspec_size == 1) {
+						curspec_type = JOYSTICK_INPUT_TYPE_BUTTON;
+					} else if (curspec_size == 4 && (curspec_unit == 0x12 || curspec_unit == 0x14)) {
+						curspec_type = JOYSTICK_INPUT_TYPE_HAT_DEG;
+					} else {
+						curspec_type = JOYSTICK_INPUT_TYPE_AXIS;
+					}
+				}
+				addjoyspec();
 			break;
 			case REPORT_OUTPUT:
 				DEBUG_OUT("Output 0x%02lx\n", data);
@@ -114,17 +143,31 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 			break;
 			case REPORT_REPORT_SIZE:
 				DEBUG_OUT("Report size %lu\n", data);
+				curspec_size = data;
 			break;
 			case REPORT_REPORT_ID:
 				DEBUG_OUT("Report ID %lu\n", data);
+				curspec_size = 8;
+				curspec_type = JOYSTICK_INPUT_TYPE_ID;
+				curspec_count = data;
+				addjoyspec();
 			break;
 			case REPORT_REPORT_COUNT:
 				DEBUG_OUT("Report count %lu\n", data);
+				curspec_count = data;
 			break;
 			default:
 				DEBUG_OUT("Unknown HID report identifier: 0x%02x (%i bytes) data: 0x%02lx\n", id, size, data);
 		};
 		i += size + 1;
+	}
+}
+
+void DEBUG_OUT_JOYSTICK_REPORTS(UDevInterface *iface)
+{
+	for (uint8_t i = 0; i < iface->spec.hid.num_reports; i++) {
+		HIDReportSpec *rep = &iface->spec.hid.reports[i];
+		DEBUG_OUT("HID input: %d, size %d, count %d\n", rep->type, rep->size, rep->count);
 	}
 }
 
@@ -157,6 +200,7 @@ unsigned char getHIDDeviceReport(UDevInterface *iface)
 	DEBUG_OUT("\n");*/
 	//sendProtocolMSG(MSG_TYPE_HID_INFO, len, CurrentDevive, HIDdevice[CurrentDevive].interface, HIDdevice[CurrentDevive].rootHub, receiveDataBuffer);
 	parseHIDDeviceReport(receiveDataBuffer, len, iface);
+	DEBUG_OUT_JOYSTICK_REPORTS(iface);
 	return (ERR_SUCCESS);
 }
 
