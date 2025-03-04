@@ -14,8 +14,6 @@ typedef unsigned char  __data             UINT8D;
 #include "USBHost.h"
 #include "uart0.h"
 #include "uart1.h"
-#include "kbdparse.h"
-#include "keymap.h"
 #include "ringbuf.h"
 #include "udev_hid.h"
 #include "udev_hub.h"
@@ -101,9 +99,6 @@ uint8_t spi_updatecfg(uint8_t addr)
         case 1: case 2: // uart divisor
             initUART1withDivisor(((uint16_t)g_spireg[2] << 8) | g_spireg[1]);
             break;
-        case 4: // config
-            keymap_setmap((g_spireg[addr] & 0x80) ? KEYMAP_US : KEYMAP_JP);
-            break;
         case 5: // status
             r = (0x80 | (g_spireg[addr] & 0x07));
             break;
@@ -168,7 +163,6 @@ uint8_t hexchar2bin(const __xdata char *str)
 #define MAX_NUM_KEYBOARDS 8
 int8_t __xdata g_kbd_devIndex[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_kbd_devAddr[MAX_NUM_KEYBOARDS];
-KbdState g_kbd[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_numKbds;
 RingBuf g_rb_out;
 uint8_t __xdata g_raw_mode;
@@ -277,17 +271,6 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
     }
 }
 
-void kbd_updatelocks(uint8_t newlocks, uint8_t specific_addr)
-{
-    for (uint8_t i = 0; i < kbd_maxcount(); i++) {
-        if (!kbd_isconnectedat(i)) continue;
-        if (specific_addr && g_kbd_devAddr[i] != specific_addr) continue;
-        KbdState *kbd = &g_kbd[i];
-        kbd->locks = newlocks;
-        setHIDDeviceLED(g_kbd_devIndex[i], Usage_KEYBOARD, newlocks);
-    }
-}
-
 // ================
 
 void cfg_writereg_and_update(uint8_t addr, uint8_t value)
@@ -297,11 +280,13 @@ void cfg_writereg_and_update(uint8_t addr, uint8_t value)
     spi_writereg(addr, value);
     uint8_t r = spi_updatecfg(addr);
     if (r & 0x80) {
+#if 0
         if (g_numKbds > 0 && !(g_raw_mode && cfg_separatelock())) {
             kbd_updatelocks(cfg_locks(), 0);
         } else {
             g_default_locks = cfg_locks();
         }
+#endif
     }
 }
 
@@ -399,14 +384,13 @@ void main()
     g_numKbds = 0;
 
     // default configs
-    g_default_locks = LOCK_NUM;
     uint16_t bd = UART1CalculateDivisor(9600);
     g_spireg[0] = VERSION_BYTE;
     g_spireg[1] = bd & 0x0ff;
     g_spireg[2] = bd >> 8;
     g_spireg[3] = 0x40 | 0x04;
     g_spireg[4] = 0;
-    spi_update_statusreg(0, g_default_locks); // reg 5
+    g_spireg[5] = 0;
     g_spireg[6] = 5;
     g_spireg[7] = 0x4c;
 
@@ -455,7 +439,6 @@ void main()
             case 7: initUART1(115200); break;
         }
     }
-    keymap_setmap((g_spireg[4] & 0x80) ? KEYMAP_US : KEYMAP_JP);
     EA = 1;
     init_watchdog(1);
 
@@ -536,20 +519,17 @@ void main()
             } else {
                 p3_assert_detect();
             }
-            uint8_t lk = g_default_locks;
+#if 0
             if (kbdconnected) for (uint8_t i = 0; i < kbd_maxcount(); i++) {
                 if (!kbd_isconnectedat(i)) continue;
-                lk = g_kbd[i].locks;
             }
             spi_update_statusreg(kbdconnected, lk);
+#endif
         }
 
         if (kbd_isconnectedat(targetKbdIndex)) {
-            KbdState *kbd = &g_kbd[targetKbdIndex];
             uint8_t devaddr = g_kbd_devAddr[targetKbdIndex];
             static __xdata uint8_t buf[16];
-            static KeyEvent evts[16];
-            uint8_t nevts = 0;
             uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], Usage_JOYSTICK, buf, sizeof(buf));
             if (len > 0 && g_need_poll) {
                 DEBUG_OUT("pollHIDDev @%d [%d] ", targetKbdIndex, len);
