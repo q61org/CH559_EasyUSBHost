@@ -46,7 +46,7 @@ struct udev_interface_t
 	} spec;
 };
 typedef struct udev_interface_t __xdata UDevInterface;
-#define MAX_INTERFACES_PER_DEVICE 4
+#define MAX_INTERFACES_PER_DEVICE 6
 
 #define USB_DEVICE_STRING_MAXLEN 16
 struct usbdevice_t
@@ -69,7 +69,7 @@ struct usbdevice_t
 };
 typedef struct usbdevice_t __xdata USBDevice;
 #define FIRST_USB_DEV_ID 16
-#define MAX_USB_DEVICES 8
+#define MAX_USB_DEVICES 4
 #define PARENT_NONE 255
 
 

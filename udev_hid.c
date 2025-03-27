@@ -235,7 +235,8 @@ uint8_t pollHIDDevice(uint8_t devIndex, uint8_t usage, __xdata uint8_t *dst, uin
 	for (uint8_t ii = 0; ii < d->num_ifaces; ii++) {
 		UDevInterface *iface = &d->iface[ii];
 		//if (iface->class != USB_DEV_CLASS_HID) continue;
-		if (iface->usage != usage) continue;
+		if (ii != usage) continue;
+		//if (iface->usage != usage) continue;
 		if (iface->ep_in == 0) continue;
 
 		selectUSBDevice(devIndex);

@@ -167,6 +167,7 @@ uint8_t __xdata g_kbd_devAddr[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_numKbds;
 GamepadState g_state[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_kbd_isXinput[MAX_NUM_KEYBOARDS];
+uint8_t __xdata g_kbd_interfNo[MAX_NUM_KEYBOARDS];
 RingBuf g_rb_out;
 uint8_t __xdata g_raw_mode;
 uint8_t __xdata g_default_locks;
@@ -203,6 +204,14 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
                 DEBUG_OUT("CALLBACK: normal hid mode\n");
                 g_kbd_isXinput[idx] = 0;
             }
+            g_kbd_interfNo[idx] = 0;
+            for (uint8_t i = 0; i < MAX_INTERFACES_PER_DEVICE; i++) {
+                if (dev->iface[i].ep_in) {
+                    g_kbd_interfNo[idx] = i;
+                    break;
+                }
+            }
+            DEBUG_OUT("CALLBACK: using interf index %d\n", g_kbd_interfNo[idx]);
             gamepad_state_clear(&g_state[idx]);
             g_numKbds++;
             DEBUG_OUT("CALLBACK: %d gamepad(s) now connected\n", g_numKbds);
@@ -484,7 +493,7 @@ void main()
     iface_xinput.spec.hid.reports[4].type = JOYSTICK_INPUT_TYPE_AXIS_POSNEG_16BIT;
     iface_xinput.spec.hid.reports[4].size = 8;
     iface_xinput.spec.hid.reports[4].count = 4;
-    iface_xinput.spec.hid.num_reports = 6;
+    iface_xinput.spec.hid.num_reports = 5;
 
     while (1) {
         do {
@@ -564,17 +573,20 @@ void main()
         if (kbd_isconnectedat(targetKbdIndex)) {
             UDevInterface *iface;
             uint8_t devaddr = g_kbd_devAddr[targetKbdIndex];
-            static __xdata uint8_t buf[16];
-            uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], Usage_JOYSTICK, buf, sizeof(buf), &iface);
+            static __xdata uint8_t buf[32];
+            static uint16_t pollsn = 0;
+            uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], g_kbd_interfNo[targetKbdIndex], buf, sizeof(buf), &iface);
+            ++pollsn;
+            //uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], Usage_JOYSTICK, buf, sizeof(buf), &iface);
             if (len > 0) {
-                /*DEBUG_OUT("pollHIDDev @%d [%d] ", targetKbdIndex, len);
+                DEBUG_OUT("pollHIDDev %04x @%d [%d] ", pollsn, targetKbdIndex, len);
             	for (uint8_t iii = 0; iii < len; iii++)
 	            {
 		            DEBUG_OUT("%02X ", buf[iii]);
 	            }
-                DEBUG_OUT("\n");*/
+                DEBUG_OUT("\n");
 
-                uint8_t p3out = 0xff;
+                uint8_t p3out = 0xfc;
                 gamepad_state_clear(&padforled);
                 if (g_kbd_isXinput[targetKbdIndex]) {
                     uint8_t k, btnswap;
@@ -587,26 +599,30 @@ void main()
                 } else {
                     gamepad_parse_hid_data(iface, buf, len, &padforled);
                 }
-                static GamepadXY xy;
-                gamepad_get_unified_digital_xy(&padforled, &xy);
-                if (xy.y < 0x40) {
-                    p3out ^= 0x04;
-                } else if (xy.y >= 0xc0) {
-                    p3out ^= 0x08;
+                //static GamepadDPad dpad;
+                //gamepad_get_unified_dpad(&padforled, &dpad);
+                uint8_t unidir = 0;
+                if (padforled.unified_dpad.dir.up) {
+                    unidir ^= 0x01;
+                } else if (padforled.unified_dpad.dir.down) {
+                    unidir ^= 0x02;
                 }
-                if (xy.x < 0x40) {
-                    p3out ^= 0x10;
-                } else if (xy.x >= 0xc0) {
-                    p3out ^= 0x20;
+                if (padforled.unified_dpad.dir.left) {
+                    unidir ^= 0x04;
+                } else if (padforled.unified_dpad.dir.right) {
+                    unidir ^= 0x08;
                 }
+                p3out ^= (unidir << 2);
                 if (padforled.btns[0] != 0) {
                     p3out ^= 0x40;
                 }
                 if (padforled.btns[1] != 0) {
                     p3out ^= 0x80;
                 }
-                P3 = p3out;
+                P3 &= p3out | 3;
+                P3 |= p3out;
 
+                //DEBUG_OUT("unidir: %02x, xys: %02x,%02x  %02x,%02x\n", unidir, padforled.xys[0].x, padforled.xys[0].y, padforled.xys[1].x, padforled.xys[1].y);
                 if (g_need_poll) {
                     uint8_t i;
                     GamepadState *pad = &g_state[targetKbdIndex];
@@ -614,6 +630,18 @@ void main()
 
                     ringbuf_write(&g_rb_out, bin2hexchar(devaddr >> 4));
                     ringbuf_write(&g_rb_out, bin2hexchar(devaddr));
+                    ringbuf_write(&g_rb_out, 'G');
+                    for (uint8_t k = 0; k < 4; k++) {
+                        ringbuf_write(&g_rb_out, bin2hexchar(pad->unified_dpad.btn[k] >> 4));
+                        ringbuf_write(&g_rb_out, bin2hexchar(pad->unified_dpad.btn[k]));
+                    }
+                    for (i = 0; i < pad->num_dpads; i++) {
+                        ringbuf_write(&g_rb_out, 'H');
+                        for (uint8_t k = 0; k < 4; k++) {
+                            ringbuf_write(&g_rb_out, bin2hexchar(pad->dpads[i].btn[k] >> 4));
+                            ringbuf_write(&g_rb_out, bin2hexchar(pad->dpads[i].btn[k]));
+                        }
+                    }
                     for (i = 0; i < pad->num_xys; i++) {
                         ringbuf_write(&g_rb_out, 'X');
                         ringbuf_write(&g_rb_out, bin2hexchar(pad->xys[i].x >> 4));
