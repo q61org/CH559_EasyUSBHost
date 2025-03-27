@@ -19,7 +19,7 @@ void initUART1withDivisor(uint16_t div)
 	SER1_LCR =  0;
 
 	// set pin mode, RXD->P2.6 TXD->P2.7
-	SER1_IER = bIER_PIN_MOD1;
+	SER1_IER = bIER_PIN_MOD1;// | bIER_THR_EMPTY;
 
 	// Allow access to Baudrate control register
 	SER1_LCR = bLCR_DLAB;
@@ -35,6 +35,7 @@ void initUART1withDivisor(uint16_t div)
 	// set data format: 8bit, none, 1bit
 	// Allow access to RBR, THR, IER, ADR
 	SER1_LCR = 0x03;
+	SER1_MCR |= bMCR_OUT2;
 }
 
 uint16_t UART1CalculateDivisor(uint32_t baud)
@@ -75,7 +76,9 @@ unsigned char UART1TxIsEmpty()
 {
 	return ((SER1_LSR & bLSR_T_FIFO_EMP) != 0);
 }
+/*
 void UART1SendAsync(unsigned char b)
 {
 	SER1_THR = b;
 }
+*/

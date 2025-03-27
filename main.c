@@ -38,6 +38,7 @@ void ticks_init()
     TR0 = 1;
 }
 
+void g_rb_out_startsend();
 INTERRUPT_USING(timer0_isr, INT_NO_TMR0, 1)
 { // 1024 counts per second
     TH0 = 0xf0;
@@ -47,6 +48,7 @@ INTERRUPT_USING(timer0_isr, INT_NO_TMR0, 1)
         ++g_ticks;
         if (g_leddecr) --g_leddecr;
     }
+    g_rb_out_startsend();
 }
 
 volatile inline uint32_t ticks()
@@ -59,72 +61,6 @@ volatile inline uint32_t seconds()
     return (g_ticks >> 7);
 }
 
-// ==== SPI ====
-
-__xdata volatile uint8_t g_spiphase;
-
-#define SPI_REG_SIZE 8
-#define SPI_REG_SIZE_MASK 7
-uint8_t __xdata g_spireg[SPI_REG_SIZE];
-uint8_t __xdata g_spiaddr;
-uint8_t __xdata g_spidata;
-uint8_t __xdata g_spisent;
-
-INTERRUPT_USING(spi0_isr, INT_NO_SPI0, 2)
-{
-    if (SPI0_SETUP & bS0_SLV_SELT) {
-        if (g_spiphase == 1) {
-            g_spiaddr = SPI0_DATA;
-            SPI0_DATA = g_spisent = g_spireg[g_spiaddr & SPI_REG_SIZE_MASK];
-            g_spiphase++;
-        } else if (g_spiphase == 2) {
-            g_spidata = SPI0_DATA;
-            g_spiphase++;
-        }
-
-    }
-    S0_IF_BYTE = 0;
-}
-
-void spi_writereg(uint8_t addr, uint8_t value)
-{
-    addr &= SPI_REG_SIZE_MASK;
-    if (addr == 0) return;
-    g_spireg[addr] = value;
-}
-
-uint8_t spi_updatecfg(uint8_t addr)
-{ // returns (lock_bitmap | 0x80) if update is required
-    uint8_t r = 0;
-    switch (addr) {
-        case 1: case 2: // uart divisor
-            initUART1withDivisor(((uint16_t)g_spireg[2] << 8) | g_spireg[1]);
-            break;
-        case 5: // status
-            r = (0x80 | (g_spireg[addr] & 0x07));
-            break;
-    }
-    return r;
-}
-
-void spi_update_statusreg(uint8_t connected, uint8_t locks)
-{
-    g_spireg[5] = (connected ? 0x80 : 0x00) | (locks & 0x07);
-}
-
-#define cfg_repeat_delay()  (g_spireg[3] & 0xf0)
-#define cfg_repeat_intvl()  ((g_spireg[3] & 0x0f) << 2)
-#define cfg_dis_numlk()     (g_spireg[4] & 0x01)
-#define cfg_dis_capslk()    (g_spireg[4] & 0x02)
-#define cfg_dis_scrlk()     (g_spireg[4] & 0x04)
-#define cfg_separatelock()  (g_spireg[4] & 0x10)
-#define cfg_ctrlsequence()  (g_spireg[4] & 0x10)
-#define cfg_swapcaps()      (g_spireg[4] & 0x20)
-#define cfg_crlf()          (g_spireg[4] & 0x40)
-#define cfg_keymap_us()     (g_spireg[4] & 0x80)
-#define cfg_locks()         (g_spireg[5] & 0x07)
-#define cfg_intr_modifier() (g_spireg[6])
-#define cfg_intr_keynum()   (g_spireg[7])
 
 // ================
 
@@ -134,6 +70,35 @@ void spi_update_statusreg(uint8_t connected, uint8_t locks)
 #define p3_clear_inact()       (P3 |= 1)
 #define p3_assert_detect()     (P3 &= 0xfd)
 #define p3_clear_detect()      (P3 |= 2)
+
+// ================
+
+RingBuf g_rb_out;
+uint8_t g_rb_out_sending = 0;
+
+void g_rb_out_startsend()
+{
+    if (g_rb_out_sending) return;
+    if (!RINGBUF_AVAILABLE(&g_rb_out)) return;
+    SER1_IER |= bIER_THR_EMPTY;
+    g_rb_out_sending = 1;
+}
+
+// ================
+
+INTERRUPT_USING(uart1_isr, INT_NO_UART1, 2)
+{
+    if (!RINGBUF_AVAILABLE(&g_rb_out)) {
+        SER1_IER &= ~bIER_THR_EMPTY;
+        g_rb_out_sending = 0;
+        return;
+    }
+    p3_clear_inact();
+    g_leddecr = 6;
+    uint8_t b;
+    RINGBUF_READ(&g_rb_out, b);
+    UART1SendAsync(b);
+}
 
 // ================
 
@@ -168,7 +133,6 @@ uint8_t __xdata g_numKbds;
 GamepadState g_state[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_kbd_isXinput[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_kbd_interfNo[MAX_NUM_KEYBOARDS];
-RingBuf g_rb_out;
 uint8_t __xdata g_raw_mode;
 uint8_t __xdata g_default_locks;
 uint8_t __xdata g_need_poll;
@@ -292,25 +256,6 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
 
 // ================
 
-void cfg_writereg_and_update(uint8_t addr, uint8_t value)
-{
-    addr &= 0x7f;
-    if (addr >= SPI_REG_SIZE) return;
-    spi_writereg(addr, value);
-    uint8_t r = spi_updatecfg(addr);
-    if (r & 0x80) {
-#if 0
-        if (g_numKbds > 0 && !(g_raw_mode && cfg_separatelock())) {
-            kbd_updatelocks(cfg_locks(), 0);
-        } else {
-            g_default_locks = cfg_locks();
-        }
-#endif
-    }
-}
-
-// ================
-
 uint8_t strlen_xdata_s(const __xdata char *str, uint8_t maxlen)
 {
     uint8_t r = 0;
@@ -407,14 +352,6 @@ void main()
 
     // default configs
     uint16_t bd = UART1CalculateDivisor(9600);
-    g_spireg[0] = VERSION_BYTE;
-    g_spireg[1] = bd & 0x0ff;
-    g_spireg[2] = bd >> 8;
-    g_spireg[3] = 0x40 | 0x04;
-    g_spireg[4] = 0;
-    g_spireg[5] = 0;
-    g_spireg[6] = 5;
-    g_spireg[7] = 0x4c;
 
     // init others
     initClock();
@@ -427,7 +364,7 @@ void main()
     setAttachCallback(usbAttachCallback);
     ringbuf_init(&g_rb_out);
 
-    g_spiphase = 0;
+#if 0
     cfg_pin = P3;
     g_raw_mode = (P3 & (1 << 3)) == 0;
     if ((cfg_pin & (1 << 4)) == 0) {
@@ -439,17 +376,10 @@ void main()
         SPI0_SETUP = 0x90;
         SPI0_CTRL = 0x81;
         SPI0_STAT = 0xff;
-        g_spidata = 0;
-        g_spiphase = 1;
-        IE_SPI0 = 1;
         DEBUG_OUT("done.\n");
     } else {
         // hardware config mode
         uint8_t p1_in = P1;
-        if ((cfg_pin & (1 << 5)) == 0) g_spireg[4] |= 0x80; // us keymap
-        if ((cfg_pin & (1 << 6)) == 0) g_spireg[4] |= 0x10; // multibyte control sequence / separate locks
-        if ((cfg_pin & (1 << 7)) == 0) g_spireg[3] = 0; // no repeat
-        if ((p1_in & (1 << 4)) == 0) g_spireg[4] |= 0x07; // disable lock keys
         switch ((p1_in >> 5) ^ 0x07) {
             case 0: break;
             case 1: initUART1(14400); break;
@@ -461,7 +391,9 @@ void main()
             case 7: initUART1(115200); break;
         }
     }
+#endif
     P3_PU = 0x03;
+    IE_UART1 = 1;
     EA = 1;
     init_watchdog(1);
 
@@ -503,13 +435,14 @@ void main()
                 init_watchdog(0);
                 runBootloader();
             }
-            if (ringbuf_available(&g_rb_out) && UART1TxIsEmpty()) {
+            //g_rb_out_startsend();
+            /*if (ringbuf_available(&g_rb_out) && UART1TxIsEmpty()) {
                 p3_clear_inact();
                 g_leddecr = 6;
                 uint8_t d = ringbuf_pop(&g_rb_out);
                 //DEBUG_OUT("sending %02x via UART1\n", d);
                 UART1SendAsync(d);
-            }
+            }*/
             if (UART1Available()) {
                 uint8_t b = UART1Receive();
                 if (b >= 0x20) {
@@ -524,7 +457,7 @@ void main()
                     }
                 }
             }
-            switch (g_spiphase) {
+           /* switch (g_spiphase) {
                 case 0: // spi is disabled, nop
                     break;
                 case 1: // spi idle
@@ -544,7 +477,7 @@ void main()
                         g_spiphase = 1;
                     }
                     break;
-            }
+            }*/
         } while (lastsubtick == g_subticks);
         lastsubtick = g_subticks;
 
@@ -579,12 +512,12 @@ void main()
             ++pollsn;
             //uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], Usage_JOYSTICK, buf, sizeof(buf), &iface);
             if (len > 0) {
-                DEBUG_OUT("pollHIDDev %04x @%d [%d] ", pollsn, targetKbdIndex, len);
+                /*DEBUG_OUT("pollHIDDev %04x @%d [%d] ", pollsn, targetKbdIndex, len);
             	for (uint8_t iii = 0; iii < len; iii++)
 	            {
 		            DEBUG_OUT("%02X ", buf[iii]);
 	            }
-                DEBUG_OUT("\n");
+                DEBUG_OUT("\n");*/
 
                 uint8_t p3out = 0xfc;
                 gamepad_state_clear(&padforled);

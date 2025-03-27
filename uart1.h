@@ -8,6 +8,7 @@ unsigned char UART1Available();
 unsigned char UART1Receive();
 void UART1Send(unsigned char b);
 unsigned char UART1TxIsEmpty();
-void UART1SendAsync(unsigned char b);
+//void UART1SendAsync(unsigned char b);
+#define UART1SendAsync(B) SER1_THR = (B)
 
 #endif

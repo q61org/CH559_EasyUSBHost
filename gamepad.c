@@ -335,3 +335,28 @@ void gamepad_get_unified_dpad(GamepadState *src, GamepadDPad *dst)
     }
 
 }
+
+uint8_t gamepad_state_isequal(GamepadState *a, GamepadState *b) 
+{
+    uint8_t i, k;
+    if (a->num_dpads != b->num_dpads) return 0;
+    if (a->num_xys != b->num_xys) return 0;
+    if (a->num_trigs != b->num_trigs) return 0;
+    if (a->num_btns != b->num_btns) return 0;
+    for (i = 0; i < a->num_dpads; i++) {
+        for (k = 0; k < 4; k++) {
+            if (!a->dpads[i].btn[k] != !b->dpads[i].btn[k]) return 0;
+        }
+    }
+    for (i = 0; i < a->num_xys; i++) {
+        if (a->xys[i].x != b->xys[i].x) return 0;
+        if (a->xys[i].y != b->xys[i].y) return 0;
+    }
+    for (i = 0; i < a->num_trigs; i++) {
+        if (a->trigs[i] != b->trigs[i]) return 0;
+    }
+    for (i = 0; i < a->num_btns; i++) {
+        if (!a->btns[i] != !b->btns[i]) return 0;
+    }
+    return 1;
+}

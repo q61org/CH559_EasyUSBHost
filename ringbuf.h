@@ -19,4 +19,8 @@ uint8_t ringbuf_available(RingBuf *rb);
 uint8_t ringbuf_read(RingBuf *rb, uint8_t *dst);
 uint8_t ringbuf_pop(RingBuf *rb);
 
+// inline version for use in interrupts
+#define RINGBUF_AVAILABLE(RB) ((RB)->wi != (RB)->ri)
+#define RINGBUF_READ(RB, DST) DST = (RB)->buf[(RB)->ri++]; (RB)->ri &= RINGBUF_SIZE_MASK
+
 #endif

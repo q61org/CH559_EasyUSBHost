@@ -42,5 +42,6 @@ void gamepad_state_clear(GamepadState *dst);
 void gamepad_state_update(GamepadState *dst, GamepadState *src);
 //void gamepad_get_unified_digital_xy(GamepadState *src, GamepadXY *dst);
 void gamepad_get_unified_dpad(GamepadState *src, GamepadDPad *dst);
+uint8_t gamepad_state_isequal(GamepadState *a, GamepadState *b);
 
 #endif
