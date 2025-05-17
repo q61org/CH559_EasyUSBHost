@@ -8,9 +8,9 @@ void ringbuf_init(RingBuf *rb)
 
 uint8_t ringbuf_write(RingBuf *rb, uint8_t b)
 {
-    if (((rb->wi + 1) & RINGBUF_SIZE_MASK) == rb->ri) {
-        // buffer full
-        return 0;
+    while (((rb->wi + 1) & RINGBUF_SIZE_MASK) == rb->ri) {
+        // block on buffer full
+        ;
     }
     rb->buf[rb->wi++] = b;
     rb->wi &= RINGBUF_SIZE_MASK;

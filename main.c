@@ -51,6 +51,11 @@ INTERRUPT_USING(timer0_isr, INT_NO_TMR0, 1)
     g_rb_out_startsend();
 }
 
+volatile inline uint8_t subticks8()
+{
+    return (((uint8_t)(g_ticks & 0x1f) << 3) | g_subticks);
+}
+
 volatile inline uint32_t ticks()
 { // 128 counts per second
     return g_ticks;
@@ -136,6 +141,10 @@ uint8_t __xdata g_kbd_interfNo[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_raw_mode;
 uint8_t __xdata g_default_locks;
 uint8_t __xdata g_need_poll;
+uint8_t __xdata g_output_format;
+
+#define OUTPUT_FORMAT_WITHCOUNT  1
+#define OUTPUT_FORMAT_FULLLAYOUT 2
 
 #define kbd_maxcount()           (sizeof(g_kbd_devIndex))
 #define kbd_isconnectedat(INDEX) (g_kbd_devIndex[INDEX] >= 0)
@@ -314,6 +323,70 @@ void uartcmd_process(const __xdata char *cmd)
 #endif
 }
 
+void rb_out_hex2char(RingBuf *rb, uint8_t v)
+{
+    uint8_t d = v >> 4;
+    ringbuf_write(rb, (d < 10) ? '0' + d : 'a' - 10 + d);
+    d = v & 0x0f;
+    ringbuf_write(rb, (d < 10) ? '0' + d : 'a' - 10 + d);
+}
+void rb_out_hex1char(RingBuf *rb, uint8_t v)
+{
+    uint8_t d = v & 0x0f;
+    ringbuf_write(rb, (d < 10) ? '0' + d : 'a' - 10 + d);
+}
+
+void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
+{
+    uint8_t d, i;
+    rb_out_hex2char(&g_rb_out, devaddr);
+    switch (fmt) {
+        default:
+            d = 0;
+            for (uint8_t k = 0; k < 4; k++) {
+                d |= (pad->unified_dpad.btn[k] != 0) ? (1 << k) : 0;
+            }
+            ringbuf_write(&g_rb_out, 'g');
+            rb_out_hex1char(&g_rb_out, d);
+            ringbuf_write(&g_rb_out, 'n');
+            for (uint8_t i = 0; i < pad->num_btns; i += 4) {
+                d = 0;
+                for (uint8_t k = 0; k < 4; k++) {
+                    if (i + k >= pad->num_btns) break;
+                    d |= (pad->btns[i + k] != 0) ? (1 << k) : 0;
+                }
+                rb_out_hex1char(&g_rb_out, d);
+            }
+            break;
+
+        case OUTPUT_FORMAT_FULLLAYOUT | OUTPUT_FORMAT_WITHCOUNT:
+            ringbuf_write(&g_rb_out, 'G');
+            for (uint8_t k = 0; k < 4; k++) {
+                rb_out_hex2char(&g_rb_out, pad->unified_dpad.btn[k]);
+            }
+            for (i = 0; i < pad->num_dpads; i++) {
+                ringbuf_write(&g_rb_out, 'H');
+                for (uint8_t k = 0; k < 4; k++) {
+                    rb_out_hex2char(&g_rb_out, pad->dpads[i].btn[k]);
+                }
+            }
+            for (i = 0; i < pad->num_xys; i++) {
+                ringbuf_write(&g_rb_out, 'X');
+                rb_out_hex2char(&g_rb_out, pad->xys[i].x);
+            }
+            for (i = 0; i < pad->num_trigs; i++) {
+                ringbuf_write(&g_rb_out, 'T');
+                rb_out_hex2char(&g_rb_out, pad->trigs[i]);
+            }
+            ringbuf_write(&g_rb_out, 'N');
+            for (i = 0; i < pad->num_btns; i++) {
+                rb_out_hex2char(&g_rb_out, pad->btns[i]);
+            }
+            break;
+    }
+    ringbuf_write(&g_rb_out, ';');
+}
+
 void main()
 {
     if(!(P4_IN & (1 << 6))) {
@@ -406,6 +479,9 @@ void main()
     static __xdata uint32_t lasthubchecksecs;
     lasthubchecksecs = seconds();
     uint8_t lastsubtick = 0;
+    uint8_t lastoutsubtick8 = 0;
+    uint8_t st = 0;
+    uint8_t need_out = 0;
     uint8_t targetKbdIndex = 0;
     static GamepadState padforled;
 
@@ -435,14 +511,6 @@ void main()
                 init_watchdog(0);
                 runBootloader();
             }
-            //g_rb_out_startsend();
-            /*if (ringbuf_available(&g_rb_out) && UART1TxIsEmpty()) {
-                p3_clear_inact();
-                g_leddecr = 6;
-                uint8_t d = ringbuf_pop(&g_rb_out);
-                //DEBUG_OUT("sending %02x via UART1\n", d);
-                UART1SendAsync(d);
-            }*/
             if (UART1Available()) {
                 uint8_t b = UART1Receive();
                 if (b >= 0x20) {
@@ -457,27 +525,6 @@ void main()
                     }
                 }
             }
-           /* switch (g_spiphase) {
-                case 0: // spi is disabled, nop
-                    break;
-                case 1: // spi idle
-                    break;
-                case 2: // spi address received
-                    break;
-                case 3: // spi data received
-                    DEBUG_OUT("SPI rcvd, @%02x/%02x, sent %02x\n", g_spiaddr, g_spidata, g_spisent);
-                    g_spiphase++;
-                    if (g_spiaddr & 0x80) {
-                        cfg_writereg_and_update(g_spiaddr, g_spidata);
-                    }
-                    break;
-                default:
-                    if ((SPI0_SETUP & bS0_SLV_SELT) == 0) {
-                        DEBUG_OUT("SPI reset.\n");
-                        g_spiphase = 1;
-                    }
-                    break;
-            }*/
         } while (lastsubtick == g_subticks);
         lastsubtick = g_subticks;
 
@@ -495,15 +542,16 @@ void main()
             } else {
                 p3_assert_detect();
             }
-#if 0
-            if (kbdconnected) for (uint8_t i = 0; i < kbd_maxcount(); i++) {
-                if (!kbd_isconnectedat(i)) continue;
-            }
-            spi_update_statusreg(kbdconnected, lk);
-#endif
         }
 
-        if (kbd_isconnectedat(targetKbdIndex)) {
+        st = subticks8();
+        if ((uint8_t)(st - lastoutsubtick8) > 33) {
+            need_out = 1;
+            lastoutsubtick8 = st;
+        }
+        uint8_t ledout_done = 0;
+        for (targetKbdIndex = 0; targetKbdIndex < MAX_NUM_KEYBOARDS; targetKbdIndex++) {
+            if (!kbd_isconnectedat(targetKbdIndex)) continue;
             UDevInterface *iface;
             uint8_t devaddr = g_kbd_devAddr[targetKbdIndex];
             static __xdata uint8_t buf[32];
@@ -534,209 +582,60 @@ void main()
                 }
                 //static GamepadDPad dpad;
                 //gamepad_get_unified_dpad(&padforled, &dpad);
-                uint8_t unidir = 0;
-                if (padforled.unified_dpad.dir.up) {
-                    unidir ^= 0x01;
-                } else if (padforled.unified_dpad.dir.down) {
-                    unidir ^= 0x02;
+                if (ledout_done == 0) {
+                    uint8_t unidir = 0;
+                    if (padforled.unified_dpad.dir.up) {
+                        unidir ^= 0x01;
+                    } else if (padforled.unified_dpad.dir.down) {
+                        unidir ^= 0x02;
+                    }
+                    if (padforled.unified_dpad.dir.left) {
+                        unidir ^= 0x04;
+                    } else if (padforled.unified_dpad.dir.right) {
+                        unidir ^= 0x08;
+                    }
+                    p3out ^= (unidir << 2);
+                    if (padforled.btns[0] != 0) {
+                        p3out ^= 0x40;
+                    }
+                    if (padforled.btns[1] != 0) {
+                        p3out ^= 0x80;
+                    }
+                    P3 &= p3out | 3;
+                    P3 |= p3out;
+                    ledout_done = 1;
                 }
-                if (padforled.unified_dpad.dir.left) {
-                    unidir ^= 0x04;
-                } else if (padforled.unified_dpad.dir.right) {
-                    unidir ^= 0x08;
-                }
-                p3out ^= (unidir << 2);
-                if (padforled.btns[0] != 0) {
-                    p3out ^= 0x40;
-                }
-                if (padforled.btns[1] != 0) {
-                    p3out ^= 0x80;
-                }
-                P3 &= p3out | 3;
-                P3 |= p3out;
+                //DEBUG_OUT("%02x %02x %02x; ", st, lastoutsubtick8, st - lastoutsubtick8);
 
+                if (need_out) {
+                    //DEBUG_OUT("O");
+                    if (!gamepad_state_isequal(&g_state[targetKbdIndex], &padforled)) {
+                        output_gpstate(&padforled, devaddr, 0);
+                        gamepad_state_update(&g_state[targetKbdIndex], &padforled);
+                    }
+                    need_out = 0;
+                }
                 //DEBUG_OUT("unidir: %02x, xys: %02x,%02x  %02x,%02x\n", unidir, padforled.xys[0].x, padforled.xys[0].y, padforled.xys[1].x, padforled.xys[1].y);
-                if (g_need_poll) {
+                /*if (g_need_poll) {
                     uint8_t i;
                     GamepadState *pad = &g_state[targetKbdIndex];
                     gamepad_state_update(pad, &padforled);
 
-                    ringbuf_write(&g_rb_out, bin2hexchar(devaddr >> 4));
-                    ringbuf_write(&g_rb_out, bin2hexchar(devaddr));
-                    ringbuf_write(&g_rb_out, 'G');
-                    for (uint8_t k = 0; k < 4; k++) {
-                        ringbuf_write(&g_rb_out, bin2hexchar(pad->unified_dpad.btn[k] >> 4));
-                        ringbuf_write(&g_rb_out, bin2hexchar(pad->unified_dpad.btn[k]));
-                    }
-                    for (i = 0; i < pad->num_dpads; i++) {
-                        ringbuf_write(&g_rb_out, 'H');
-                        for (uint8_t k = 0; k < 4; k++) {
-                            ringbuf_write(&g_rb_out, bin2hexchar(pad->dpads[i].btn[k] >> 4));
-                            ringbuf_write(&g_rb_out, bin2hexchar(pad->dpads[i].btn[k]));
-                        }
-                    }
-                    for (i = 0; i < pad->num_xys; i++) {
-                        ringbuf_write(&g_rb_out, 'X');
-                        ringbuf_write(&g_rb_out, bin2hexchar(pad->xys[i].x >> 4));
-                        ringbuf_write(&g_rb_out, bin2hexchar(pad->xys[i].x));
-                        ringbuf_write(&g_rb_out, bin2hexchar(pad->xys[i].y >> 4));
-                        ringbuf_write(&g_rb_out, bin2hexchar(pad->xys[i].y));
-                    }
-                    for (i = 0; i < pad->num_trigs; i++) {
-                        ringbuf_write(&g_rb_out, 'T');
-                        ringbuf_write(&g_rb_out, bin2hexchar(pad->trigs[i] >> 4));
-                        ringbuf_write(&g_rb_out, bin2hexchar(pad->trigs[i]));
-                    }
-                    ringbuf_write(&g_rb_out, 'N');
-                    for (i = 0; i < pad->num_btns; i++) {
-                        ringbuf_write(&g_rb_out, bin2hexchar(pad->btns[i] >> 4));
-                        ringbuf_write(&g_rb_out, bin2hexchar(pad->btns[i]));
-                    }
-                    ringbuf_write(&g_rb_out, ';');
                     
-#if 0
-                    DEBUG_OUT("gamepad:");
-                    for (i = 0; i < pad->num_xys; i++) {
-                        DEBUG_OUT(" xy[%d]{%x,%x}", i, pad->xys[i].x, pad->xys[i].y);
-                    }
-                    for (i = 0; i < pad->num_trigs; i++) {
-                        DEBUG_OUT(" tr[%d]{%x}", i, pad->trigs[i]);
-                    }
-                    DEBUG_OUT(" btns");
-                    for (i = 0; i < pad->num_btns; i++) {
-                        DEBUG_OUT(":%x", pad->btns[i]);
-                    }
-                    DEBUG_OUT("\n");
-#endif
                     g_need_poll = 0;
-                }
+                }*/
             }
-#if 0
-            if (len > 0 && g_need_poll) {
-                uint8_t i;
-                DEBUG_OUT("pollHIDDev @%d [%d] ", targetKbdIndex, len);
-            	for (i = 0; i < len; i++)
-	            {
-		            DEBUG_OUT("%02X ", buf[i]);
-	            }
-                DEBUG_OUT("\n");
-                GamepadState *pad = &g_state[targetKbdIndex];
-                gamepad_parse_hid_data(iface, buf, len, pad);
-                DEBUG_OUT("gamepad:");
-                for (i = 0; i < pad->num_xys; i++) {
-                    DEBUG_OUT(" xy[%d]{%x,%x}", i, pad->xys[i].x, pad->xys[i].y);
-                }
-                for (i = 0; i < pad->num_trigs; i++) {
-                    DEBUG_OUT(" tr[%d]{%x}", i, pad->trigs[i]);
-                }
-                DEBUG_OUT(" btns");
-                for (i = 0; i < pad->num_btns; i++) {
-                    DEBUG_OUT(":%x", pad->btns[i]);
-                }
-                DEBUG_OUT("\n");
-                g_need_poll = 0;
-            }
-#endif
-            /*if (len > 0) {
-                if (cfg_swapcaps()) kbdparse_hid_swapcaps(buf, len);
-                nevts = kbdparse_hidinput(kbd, ticks(), buf, len, evts, 16);
-            }
-            if (nevts == 0) {
-                nevts = kbdparse_getrepeat(kbd, ticks(), cfg_repeat_delay(), cfg_repeat_intvl(), &evts[0]);
-            }
-            if (nevts > 0) {
-                DEBUG_OUT("@%d KeyEvt%3d:", devaddr, nevts);
-                for (uint8_t i = 0; i < nevts; i++) {
-                    KeyEvent *e = &evts[i];
-                    DEBUG_OUT(" %c%02x", (e->evttype == KEYEVENT_REPEAT) ? 'R' : ((e->evttype == KEYEVENT_DOWN) ? 'D' : 'U'), e->keynum);
-                    //DEBUG_OUT("** KEY EVT: %s %d %02x\n", (e->evttype == KEYEVENT_REPEAT) ? "REPEAT" : ((e->evttype == KEYEVENT_DOWN) ? "DOWN" : "UP"), e->is_modifier, e->keynum);
-                    if (e->evttype == KEYEVENT_DOWN) {
-                        if (cfg_intr_keynum() != 0 && e->keynum == cfg_intr_keynum() && e->modifier == cfg_intr_modifier()) {
-                            DEBUG_OUT("<INTERRUPT>");
-                            p3_assert_interrupt();
-                        }
-                        uint8_t doUpdateLed = 0;
-                        switch (e->keynum) {
-                            case 0x53: // numlock
-                                if (cfg_dis_numlk()) break;
-                                kbd->locks ^= LOCK_NUM;
-                                doUpdateLed = 1;
-                                break;
-                            case 0x39: // caps
-                                if (cfg_dis_capslk()) break;
-                                kbd->locks ^= LOCK_CAPS;
-                                doUpdateLed = 1;
-                                break;
-                            case 0x47: // scroll
-                                if (cfg_dis_scrlk()) break;
-                                kbd->locks ^= LOCK_SCROLL;
-                                doUpdateLed = 1;
-                                break;
-                        }
-                        if (doUpdateLed) {
-                            if (g_raw_mode && cfg_separatelock()) {
-                                setHIDDeviceLED(g_kbd_devIndex[targetKbdIndex], Usage_KEYBOARD, kbd->locks);
-                            } else {
-                                kbd_updatelocks(kbd->locks, 0);
-                                spi_update_statusreg(kbdconnected, kbd->locks);
-                            }
-                            if (g_raw_mode) {
-                                ringbuf_write(&g_rb_out, bin2hexchar(devaddr >> 4));
-                                ringbuf_write(&g_rb_out, bin2hexchar(devaddr));
-                                ringbuf_write(&g_rb_out, 'L');
-                                ringbuf_write(&g_rb_out, '0');
-                                ringbuf_write(&g_rb_out, bin2hexchar(kbd->locks));
-                                ringbuf_write(&g_rb_out, ';');
-                            }
-                        }
-                    } else if (e->evttype == KEYEVENT_UP && cfg_intr_keynum() != 0) {
-                        if (e->keynum == cfg_intr_keynum() || e->modifier != cfg_intr_modifier()) {
-                            p3_clear_interrupt();
-                        }
-                    }
-
-                    static __xdata char charbuf[8];
-                    uint8_t cnt = 0;
-                    if ((e->evttype == KEYEVENT_DOWN || e->evttype == KEYEVENT_REPEAT) && (e->is_modifier == 0)) {
-                        cnt = keymap_keynum_to_char(e->keynum, e->modifier, kbd->locks, charbuf, 8);
-                    }
-
-                    if (g_raw_mode) {
-                        ringbuf_write(&g_rb_out, bin2hexchar(devaddr >> 4));
-                        ringbuf_write(&g_rb_out, bin2hexchar(devaddr));
-                        char d = '?';
-                        switch (e->evttype) {
-                            case KEYEVENT_DOWN: d = (e->is_modifier) ? 'M' : 'K'; break;
-                            case KEYEVENT_UP:   d = (e->is_modifier) ? 'm' : 'k'; break;
-                            case KEYEVENT_REPEAT: d = 'R'; break;
-                        }
-                        ringbuf_write(&g_rb_out, d);
-                        ringbuf_write(&g_rb_out, bin2hexchar(e->keynum >> 4));
-                        ringbuf_write(&g_rb_out, bin2hexchar(e->keynum));
-                        if (cnt == 1) {
-                            ringbuf_write(&g_rb_out, bin2hexchar(charbuf[0] >> 4));
-                            ringbuf_write(&g_rb_out, bin2hexchar(charbuf[0]));
-                        }
-                        ringbuf_write(&g_rb_out, ';');
-
-                    } else if (cnt == 1 || (cnt > 1 && cfg_ctrlsequence())) {
-                        if (cfg_crlf() && cnt == 1 && charbuf[0] == 0x0a) {
-                            ringbuf_write(&g_rb_out, 0x0d);
-                        }
-                        for (uint8_t i = 0; i < cnt; i++) {
-                            ringbuf_write(&g_rb_out, charbuf[i]);
-                        }
-                    }
-                }
-                DEBUG_OUT("\n");
-            }*/
         }
-        for (uint8_t i = 0; i < MAX_NUM_KEYBOARDS; i++) {
+        if (g_need_poll) {
+
+        }
+        //need_out = 0;
+    /*  for (uint8_t i = 0; i < MAX_NUM_KEYBOARDS; i++) {
             if (++targetKbdIndex >= kbd_maxcount()) {
                 targetKbdIndex = 0;
             }
             if (kbd_isconnectedat(targetKbdIndex)) break;
-        }
+        }*/
         if (g_leddecr == 0) {
             p3_assert_inact();
         }
