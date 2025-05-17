@@ -39,7 +39,7 @@ typedef struct keyevent_t __xdata KeyEvent;
 void kbdparse_init(KbdState *kbd);
 void kbdparse_hid_swapcaps(uint8_t __xdata *src, uint8_t len);
 
-uint8_t kbdparse_hidinput(KbdState *kbd, uint16_t tm, const uint8_t __xdata *src, uint8_t len, KeyEvent *evt_dst, uint8_t evt_dst_len);
+uint8_t kbdparse_hidinput(KbdState *kbd, uint16_t tm, uint8_t __xdata *src, uint8_t len, KeyEvent *evt_dst, uint8_t evt_dst_len);
 uint8_t kbdparse_getrepeat(KbdState *kbd, uint16_t tm, uint8_t delay, uint8_t intvl, KeyEvent *dst);
 
 

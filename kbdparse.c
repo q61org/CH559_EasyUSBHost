@@ -1,5 +1,6 @@
 #include "sdcc_keywords.h"
 #include "kbdparse.h"
+#include "util.h"
 
 
 void kbdparse_init(KbdState *kbd)
@@ -44,7 +45,7 @@ void kbdparse_hid_swapcaps(uint8_t __xdata *src, uint8_t len)
     }
 }
 
-uint8_t kbdparse_hidinput(KbdState *kbd, uint16_t tm, const uint8_t __xdata *src, uint8_t len, KeyEvent *evt_dst, uint8_t evt_dst_len)
+uint8_t kbdparse_hidinput(KbdState *kbd, uint16_t tm, uint8_t __xdata *src, uint8_t len, KeyEvent *evt_dst, uint8_t evt_dst_len)
 {
 #define append_event(EVTTYPE, ISMOD, KEYNUM, MODIFIER) \
 { \
@@ -84,15 +85,27 @@ uint8_t kbdparse_hidinput(KbdState *kbd, uint16_t tm, const uint8_t __xdata *src
     // ignore phantom state
     if (src[2] != 0 && src[2] < 4) return dst_pos;
 
+    // remove leading zeros (for compatibility with QMK firmware)
+    uint8_t di = 2;
+    uint8_t i;
+    for (i = 2; i < len; i++) {
+        if (src[i] != 0) {
+            src[di++] = src[i];
+        }
+    }
+    for (; di < len; di++) {
+        src[di] = 0;
+    }
+
     // get keys
     uint8_t pos_cur = 2;
     uint8_t pos_last = 2;
 /*
-    DEBUG_OUT("LAST:");
-    for (uint8_t i = 0; i < 8; i++) DEBUG_OUT(" %02x", s_laststate[i]);
+    DEBUG_OUT("  LAST:");
+    for (i = 0; i < 8; i++) DEBUG_OUT(" %02x", kbd->lastState[i]);
     DEBUG_OUT("\n");
-    DEBUG_OUT("  CUR:");
-    for (uint8_t i = 0; i < 8; i++) DEBUG_OUT(" %02x", src[i]);
+    DEBUG_OUT("   CUR:");
+    for (i = 0; i < 8; i++) DEBUG_OUT(" %02x", src[i]);
     DEBUG_OUT("\n");
 */
 
