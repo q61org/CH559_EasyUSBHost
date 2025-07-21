@@ -21,8 +21,8 @@ typedef unsigned char  __data             UINT8D;
 #include "udev_hub.h"
 
 
-#define VERSION_BYTE 0x04
-#define VERSION_STR  "v20221123"
+#define VERSION_BYTE 0x05
+#define VERSION_STR  "v20250517"
 
 
 // ==== TICKS ====
