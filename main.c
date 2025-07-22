@@ -465,7 +465,7 @@ void main()
 
     // read config pins
     delay(50);
-    uint8_t cfg_pin = P1 & 0xe0;
+    uint8_t cfg_pin = P1 & 0xf0;
     DEBUG_OUT("cfg pin (P1): %02x\n", cfg_pin);
 
     static __xdata uint8_t out_fmt = OUTPUT_FORMAT_FULLLAYOUT;
@@ -473,16 +473,19 @@ void main()
     DEBUG_OUT("out_fmt: %02x\n", out_fmt);
 
     switch ((cfg_pin >> 6) & 3) {
-        case 0: initUART1(76800); break;
-        case 1: initUART1(38400); break;
-        case 2: initUART1(9600); break;
-        default: initUART1(19200); break;
+        case 0: initUART1(115200); break;
+        case 1: initUART1(76800); break;
+        case 2: initUART1(57600); break;
+        default: initUART1(9600); break;
     }
-    delay(50);
 
     // reconfig output ports
-    P1_PU = 0x1f;
-    P3_PU = 0x03;
+    if ((cfg_pin & (1 << 4)) == 0) {
+        DEBUG_OUT("pullups disabled\n");
+        P1_PU = 0x1f;
+        P3_PU = 0x03;
+    }
+    delay(50);
 
     // config interrupts
     IE_GPIO = 1;
@@ -588,7 +591,6 @@ void main()
 	            }
                 DEBUG_OUT("\n");*/
 
-                uint8_t p3out = 0xfc;
                 gamepad_state_clear(&padforled);
                 if (g_kbd_isXinput[targetKbdIndex]) {
                     uint8_t k, btnswap;
@@ -604,6 +606,8 @@ void main()
                 //static GamepadDPad dpad;
                 //gamepad_get_unified_dpad(&padforled, &dpad);
                 if (ledout_done == 0) {
+                    uint8_t p3out = 0xfc;
+                    uint8_t p1out = 0xe0;
                     uint8_t unidir = 0;
                     if (padforled.unified_dpad.dir.up) {
                         unidir ^= 0x01;
@@ -624,6 +628,17 @@ void main()
                     }
                     P3 &= p3out; // | 3;
                     P3 |= p3out;
+                    if (padforled.btns[2] != 0) {
+                        p1out ^= 0x20;
+                    }
+                    if (padforled.btns[3] != 0) {
+                        p1out ^= 0x40;
+                    }
+                    if (padforled.btns[4] != 0) {
+                        p1out ^= 0x80;
+                    }
+                    P1 &= p1out;
+                    P1 |= p1out;
                     ledout_done = 1;
                 }
                 //DEBUG_OUT("%02x %02x %02x; ", st, lastoutsubtick8, st - lastoutsubtick8);
