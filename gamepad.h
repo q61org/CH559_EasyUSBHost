@@ -19,8 +19,8 @@ union gamepad_dpad_t {
 };
 typedef union gamepad_dpad_t __xdata GamepadDPad;
 struct gamepad_xy_t {
-    uint8_t x;
-    uint8_t y;
+    int8_t x;
+    int8_t y;
 };
 typedef struct gamepad_xy_t __xdata GamepadXY;
 
@@ -42,6 +42,6 @@ void gamepad_state_clear(GamepadState *dst);
 void gamepad_state_update(GamepadState *dst, GamepadState *src);
 //void gamepad_get_unified_digital_xy(GamepadState *src, GamepadXY *dst);
 void gamepad_get_unified_dpad(GamepadState *src, GamepadDPad *dst);
-uint8_t gamepad_state_isequal(GamepadState *a, GamepadState *b);
+uint8_t gamepad_state_isequal(GamepadState *a, GamepadState *b, uint8_t unified_only);
 
 #endif

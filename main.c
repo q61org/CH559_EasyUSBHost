@@ -107,6 +107,15 @@ INTERRUPT_USING(uart1_isr, INT_NO_UART1, 2)
 
 // ================
 
+uint8_t g_pollpin_edge = 0;
+
+INTERRUPT_USING(gpio_isr, INT_NO_GPIO, 3)
+{
+    g_pollpin_edge = 1;
+}
+
+// ================
+
 char bin2hexchar(uint8_t d)
 {
     d &= 0x0f;
@@ -340,49 +349,67 @@ void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
 {
     uint8_t d, i;
     rb_out_hex2char(&g_rb_out, devaddr);
-    switch (fmt) {
-        default:
+
+    d = 0;
+    for (uint8_t k = 0; k < 4; k++) {
+        d |= (pad->unified_dpad.btn[k] != 0) ? (1 << k) : 0;
+    }
+    ringbuf_write(&g_rb_out, 'G');
+    rb_out_hex1char(&g_rb_out, d);
+
+    if ((fmt & OUTPUT_FORMAT_WITHCOUNT) == 0) {
+        ringbuf_write(&g_rb_out, 'N');
+        for (uint8_t i = 0; i < 12; i += 4) {
             d = 0;
             for (uint8_t k = 0; k < 4; k++) {
-                d |= (pad->unified_dpad.btn[k] != 0) ? (1 << k) : 0;
+                if (i + k >= pad->num_btns) break;
+                d |= (pad->btns[i + k] != 0) ? (1 << k) : 0;
             }
-            ringbuf_write(&g_rb_out, 'g');
             rb_out_hex1char(&g_rb_out, d);
-            ringbuf_write(&g_rb_out, 'n');
-            for (uint8_t i = 0; i < pad->num_btns; i += 4) {
+        }
+    }
+
+    switch (fmt) {
+        case OUTPUT_FORMAT_FULLLAYOUT:
+            for (i = 0; i < pad->num_dpads; i++) {
                 d = 0;
                 for (uint8_t k = 0; k < 4; k++) {
-                    if (i + k >= pad->num_btns) break;
-                    d |= (pad->btns[i + k] != 0) ? (1 << k) : 0;
+                    d |= (pad->dpads[i].btn[k] != 0) ? (1 << k) : 0;
                 }
+                ringbuf_write(&g_rb_out, 'H');
                 rb_out_hex1char(&g_rb_out, d);
             }
             break;
 
         case OUTPUT_FORMAT_FULLLAYOUT | OUTPUT_FORMAT_WITHCOUNT:
-            ringbuf_write(&g_rb_out, 'G');
+            ringbuf_write(&g_rb_out, 'g');
             for (uint8_t k = 0; k < 4; k++) {
                 rb_out_hex2char(&g_rb_out, pad->unified_dpad.btn[k]);
             }
             for (i = 0; i < pad->num_dpads; i++) {
-                ringbuf_write(&g_rb_out, 'H');
+                ringbuf_write(&g_rb_out, 'h');
                 for (uint8_t k = 0; k < 4; k++) {
                     rb_out_hex2char(&g_rb_out, pad->dpads[i].btn[k]);
                 }
             }
-            for (i = 0; i < pad->num_xys; i++) {
-                ringbuf_write(&g_rb_out, 'X');
-                rb_out_hex2char(&g_rb_out, pad->xys[i].x);
-            }
-            for (i = 0; i < pad->num_trigs; i++) {
-                ringbuf_write(&g_rb_out, 'T');
-                rb_out_hex2char(&g_rb_out, pad->trigs[i]);
-            }
-            ringbuf_write(&g_rb_out, 'N');
+            ringbuf_write(&g_rb_out, 'n');
             for (i = 0; i < pad->num_btns; i++) {
                 rb_out_hex2char(&g_rb_out, pad->btns[i]);
             }
             break;
+    }
+
+    if (fmt & OUTPUT_FORMAT_FULLLAYOUT) {
+        for (i = 0; i < pad->num_xys; i++) {
+            ringbuf_write(&g_rb_out, 'X');
+            rb_out_hex2char(&g_rb_out, pad->xys[i].x);
+            rb_out_hex2char(&g_rb_out, pad->xys[i].y);
+        }
+        for (i = 0; i < pad->num_trigs; i++) {
+            ringbuf_write(&g_rb_out, 'T');
+            rb_out_hex2char(&g_rb_out, pad->trigs[i]);
+        }
+
     }
     ringbuf_write(&g_rb_out, ';');
 }
@@ -400,7 +427,6 @@ void main()
     static __xdata uint8_t uart_buf_pos = 0;
     static __xdata uint8_t kbdconnected = 0;
     static __xdata uint8_t tgl = 0;
-    static __xdata uint8_t cfg_pin;
     static __xdata uint8_t uartcmd[UART_CMD_MAXLEN];
     static __xdata uint8_t uartcmd_pos = 0;
 
@@ -429,7 +455,7 @@ void main()
     // init others
     initClock();
     initUART0(230400, 1);
-    initUART1(19200);
+    
     DEBUG_OUT("======== Startup ========\n");
     //resetHubDevices(0);
     //resetHubDevices(1);
@@ -437,35 +463,30 @@ void main()
     setAttachCallback(usbAttachCallback);
     ringbuf_init(&g_rb_out);
 
-#if 0
-    cfg_pin = P3;
-    g_raw_mode = (P3 & (1 << 3)) == 0;
-    if ((cfg_pin & (1 << 4)) == 0) {
-        // software config (spi) mode
-        DEBUG_OUT("Setting up SPI... ");
-        PORT_CFG &= 0xfd;
-        P1_PU &= 0x0f;
-        P1_DIR &= 0x0f;
-        SPI0_SETUP = 0x90;
-        SPI0_CTRL = 0x81;
-        SPI0_STAT = 0xff;
-        DEBUG_OUT("done.\n");
-    } else {
-        // hardware config mode
-        uint8_t p1_in = P1;
-        switch ((p1_in >> 5) ^ 0x07) {
-            case 0: break;
-            case 1: initUART1(14400); break;
-            case 2: initUART1(19200); break;
-            case 3: initUART1(28800); break;
-            case 4: initUART1(38400); break;
-            case 5: initUART1(57600); break;
-            case 6: initUART1(76800); break;
-            case 7: initUART1(115200); break;
-        }
+    // read config pins
+    delay(50);
+    uint8_t cfg_pin = P1 & 0xe0;
+    DEBUG_OUT("cfg pin (P1): %02x\n", cfg_pin);
+
+    static __xdata uint8_t out_fmt = OUTPUT_FORMAT_FULLLAYOUT;
+    if (cfg_pin & (1 << 5)) out_fmt = 0;
+    DEBUG_OUT("out_fmt: %02x\n", out_fmt);
+
+    switch ((cfg_pin >> 6) & 3) {
+        case 0: initUART1(76800); break;
+        case 1: initUART1(38400); break;
+        case 2: initUART1(9600); break;
+        default: initUART1(19200); break;
     }
-#endif
+    delay(50);
+
+    // reconfig output ports
+    P1_PU = 0x1f;
     P3_PU = 0x03;
+
+    // config interrupts
+    IE_GPIO = 1;
+    GPIO_IE = bIE_IO_EDGE | bIE_P1_4_LO;
     IE_UART1 = 1;
     EA = 1;
     init_watchdog(1);
@@ -545,7 +566,7 @@ void main()
         }
 
         st = subticks8();
-        if ((uint8_t)(st - lastoutsubtick8) > 33) {
+        if ((uint8_t)(st - lastoutsubtick8) > 15) {
             need_out = 1;
             lastoutsubtick8 = st;
         }
@@ -601,7 +622,7 @@ void main()
                     if (padforled.btns[1] != 0) {
                         p3out ^= 0x80;
                     }
-                    P3 &= p3out | 3;
+                    P3 &= p3out; // | 3;
                     P3 |= p3out;
                     ledout_done = 1;
                 }
@@ -609,8 +630,8 @@ void main()
 
                 if (need_out) {
                     //DEBUG_OUT("O");
-                    if (!gamepad_state_isequal(&g_state[targetKbdIndex], &padforled)) {
-                        output_gpstate(&padforled, devaddr, 0);
+                    if (!gamepad_state_isequal(&g_state[targetKbdIndex], &padforled, out_fmt == 0)) {
+                        output_gpstate(&padforled, devaddr, out_fmt);
                         gamepad_state_update(&g_state[targetKbdIndex], &padforled);
                     }
                     need_out = 0;
