@@ -52,7 +52,7 @@ INTERRUPT_USING(timer0_isr, INT_NO_TMR0, 1)
 }
 
 volatile inline uint8_t subticks8()
-{
+{ // 1024 counts per second
     return (((uint8_t)(g_ticks & 0x1f) << 3) | g_subticks);
 }
 
@@ -107,11 +107,12 @@ INTERRUPT_USING(uart1_isr, INT_NO_UART1, 2)
 
 // ================
 
-uint8_t g_pollpin_edge = 0;
+uint8_t __xdata g_poll_req = 0;
+uint8_t __xdata g_poll_mode = 0;
 
 INTERRUPT_USING(gpio_isr, INT_NO_GPIO, 3)
 {
-    g_pollpin_edge = 1;
+    g_poll_req = 1;
 }
 
 // ================
@@ -147,10 +148,6 @@ uint8_t __xdata g_numKbds;
 GamepadState g_state[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_kbd_isXinput[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_kbd_interfNo[MAX_NUM_KEYBOARDS];
-uint8_t __xdata g_raw_mode;
-uint8_t __xdata g_default_locks;
-uint8_t __xdata g_need_poll;
-uint8_t __xdata g_output_format;
 
 #define OUTPUT_FORMAT_WITHCOUNT  1
 #define OUTPUT_FORMAT_FULLLAYOUT 2
@@ -259,14 +256,6 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
                 g_kbd_devIndex[i] = -1;
                 --g_numKbds;
                 DEBUG_OUT("CALLBACK: disconnect, %d keyboard(s) now connected\n", g_numKbds);
-                if (g_raw_mode) {
-                    ringbuf_write(&g_rb_out, bin2hexchar(dev->address >> 4));
-                    ringbuf_write(&g_rb_out, bin2hexchar(dev->address));
-                    ringbuf_write(&g_rb_out, 'a');
-                    ringbuf_write(&g_rb_out, '0');
-                    ringbuf_write(&g_rb_out, '0');
-                    ringbuf_write(&g_rb_out, ';');
-                }
             }
         }
     }
@@ -308,7 +297,12 @@ void uartcmd_process(const __xdata char *cmd)
         }
     }
     if (cmd[0] == 'P') {
-        g_need_poll = 1;
+        if (cmd[1] == '0') {
+            g_poll_req = 0;
+            g_poll_mode = 0;
+        } else if (cmd[1] == '1') {
+            g_poll_req = 1;
+        }
     }
 #if 0
     if (cmd[0] == 'C') {
@@ -488,8 +482,9 @@ void main()
     delay(50);
 
     // config interrupts
+    GPIO_IE = bIE_IO_EDGE;
+    GPIO_IE |= bIE_P1_4_LO;
     IE_GPIO = 1;
-    GPIO_IE = bIE_IO_EDGE | bIE_P1_4_LO;
     IE_UART1 = 1;
     EA = 1;
     init_watchdog(1);
@@ -552,12 +547,16 @@ void main()
         } while (lastsubtick == g_subticks);
         lastsubtick = g_subticks;
 
+        if (g_leddecr == 0) {
+            p3_assert_inact();
+        }
+
         if (seconds() != lasthubchecksecs) {
             clear_watchdog();
             checkRootHubConnections();
             checkHubConnections();
             lasthubchecksecs = seconds();
-            //g_need_poll = 1;
+            if (g_poll_mode > 0) --g_poll_mode;
         }
         if (kbdconnected != (g_numKbds > 0)) {
             kbdconnected = (g_numKbds > 0);
@@ -568,11 +567,19 @@ void main()
             }
         }
 
-        st = subticks8();
-        if ((uint8_t)(st - lastoutsubtick8) > 15) {
+        if (g_poll_req) {
+            g_poll_mode = 11;
             need_out = 1;
-            lastoutsubtick8 = st;
+            g_poll_req = 0;
+        } else if (g_poll_mode == 0) {
+            st = subticks8();
+            if ((uint8_t)(st - lastoutsubtick8) > 15) {
+                need_out = 1;
+                lastoutsubtick8 = st;
+            }
         }
+        if (!need_out) continue;
+
         uint8_t ledout_done = 0;
         for (targetKbdIndex = 0; targetKbdIndex < MAX_NUM_KEYBOARDS; targetKbdIndex++) {
             if (!kbd_isconnectedat(targetKbdIndex)) continue;
@@ -637,43 +644,19 @@ void main()
                     if (padforled.btns[4] != 0) {
                         p1out ^= 0x80;
                     }
-                    P1 &= p1out;
+                    P1 &= p1out | 0x1f;
                     P1 |= p1out;
                     ledout_done = 1;
                 }
                 //DEBUG_OUT("%02x %02x %02x; ", st, lastoutsubtick8, st - lastoutsubtick8);
 
-                if (need_out) {
-                    //DEBUG_OUT("O");
-                    if (!gamepad_state_isequal(&g_state[targetKbdIndex], &padforled, out_fmt == 0)) {
-                        output_gpstate(&padforled, devaddr, out_fmt);
-                        gamepad_state_update(&g_state[targetKbdIndex], &padforled);
-                    }
-                    need_out = 0;
+                if (g_poll_mode || !gamepad_state_isequal(&g_state[targetKbdIndex], &padforled, out_fmt == 0)) {
+                    output_gpstate(&padforled, devaddr, out_fmt);
+                    gamepad_state_update(&g_state[targetKbdIndex], &padforled);
                 }
                 //DEBUG_OUT("unidir: %02x, xys: %02x,%02x  %02x,%02x\n", unidir, padforled.xys[0].x, padforled.xys[0].y, padforled.xys[1].x, padforled.xys[1].y);
-                /*if (g_need_poll) {
-                    uint8_t i;
-                    GamepadState *pad = &g_state[targetKbdIndex];
-                    gamepad_state_update(pad, &padforled);
-
-                    
-                    g_need_poll = 0;
-                }*/
             }
         }
-        if (g_need_poll) {
-
-        }
-        //need_out = 0;
-    /*  for (uint8_t i = 0; i < MAX_NUM_KEYBOARDS; i++) {
-            if (++targetKbdIndex >= kbd_maxcount()) {
-                targetKbdIndex = 0;
-            }
-            if (kbd_isconnectedat(targetKbdIndex)) break;
-        }*/
-        if (g_leddecr == 0) {
-            p3_assert_inact();
-        }
+        need_out = 0;
     }
 }
