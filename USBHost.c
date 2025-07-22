@@ -702,10 +702,10 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex, uint8_t pa
 							iface->ep_out = d->bEndpointAddress & 0x7f;
 						}
 
-						if (currentInterface->bInterfaceSubClass == 0 || currentInterface->bInterfaceSubClass == 93) {
-							hiddevice_init_endpoint(dev, iface, d->bEndpointAddress);
-						} else if (currentInterface->bInterfaceClass == USB_DEV_CLASS_HUB) {
+						if (currentInterface->bInterfaceClass == USB_DEV_CLASS_HUB) {
 							hubdevice_init_endpoint(dev, iface, d->bEndpointAddress);
+						} else if (currentInterface->bInterfaceSubClass == 0 || currentInterface->bInterfaceSubClass == 93) {
+							hiddevice_init_endpoint(dev, iface, d->bEndpointAddress);
 						}
 					}
 					break;

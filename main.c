@@ -141,7 +141,7 @@ uint8_t hexchar2bin(const __xdata char *str)
     return r;
 }
 
-#define MAX_NUM_KEYBOARDS 8
+#define MAX_NUM_KEYBOARDS 4
 int8_t __xdata g_kbd_devIndex[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_kbd_devAddr[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_numKbds;
@@ -168,7 +168,9 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
     DEBUG_OUT("CALLBACK: dev[%d] @%d, is_attach=%d\n", devIndex, dev->address, is_attach);
     p3_clear_interrupt();
     if (is_attach) {
-        if (1) { //dev->vid_h == 0x04 || dev->vid_l == 0x5e) {
+        if (dev->class == USB_DEV_CLASS_HUB) {
+            ;
+        } else if (1) { //dev->vid_h == 0x04 || dev->vid_l == 0x5e) {
             int8_t idx = findFreeKbdStateIndex();
             if (idx < 0) {
                 DEBUG_OUT("CALLBACK: no more keyboard!\n");

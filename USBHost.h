@@ -69,7 +69,7 @@ struct usbdevice_t
 };
 typedef struct usbdevice_t __xdata USBDevice;
 #define FIRST_USB_DEV_ID 16
-#define MAX_USB_DEVICES 4
+#define MAX_USB_DEVICES 6
 #define PARENT_NONE 255
 
 
