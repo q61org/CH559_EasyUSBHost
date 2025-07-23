@@ -346,12 +346,8 @@ void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
     uint8_t d, i;
     rb_out_hex2char(&g_rb_out, devaddr);
 
-    d = 0;
-    for (uint8_t k = 0; k < 4; k++) {
-        d |= (pad->unified_dpad.btn[k] != 0) ? (1 << k) : 0;
-    }
     ringbuf_write(&g_rb_out, 'G');
-    rb_out_hex1char(&g_rb_out, d);
+    rb_out_hex1char(&g_rb_out, pad->unified_dpad);
 
     if ((fmt & OUTPUT_FORMAT_WITHCOUNT) == 0) {
         ringbuf_write(&g_rb_out, 'N');
@@ -370,12 +366,8 @@ void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
     switch (fmt) {
         case OUTPUT_FORMAT_FULLLAYOUT:
             for (i = 0; i < pad->num_dpads; i++) {
-                d = 0;
-                for (uint8_t k = 0; k < 4; k++) {
-                    d |= (pad->dpads[i].btn[k] != 0) ? (1 << k) : 0;
-                }
                 ringbuf_write(&g_rb_out, 'H');
-                rb_out_hex1char(&g_rb_out, d);
+                rb_out_hex1char(&g_rb_out, pad->dpads[i]);
             }
             break;
 
@@ -622,17 +614,7 @@ void main()
                 if (ledout_done == 0) {
                     uint8_t p3out = 0xfc;
                     uint8_t p1out = 0xe0;
-                    uint8_t unidir = 0;
-                    if (padforled.unified_dpad.dir.up) {
-                        unidir ^= 0x01;
-                    } else if (padforled.unified_dpad.dir.down) {
-                        unidir ^= 0x02;
-                    }
-                    if (padforled.unified_dpad.dir.left) {
-                        unidir ^= 0x04;
-                    } else if (padforled.unified_dpad.dir.right) {
-                        unidir ^= 0x08;
-                    }
+                    uint8_t unidir = padforled.unified_dpad & 0x0f;
                     p3out ^= (unidir << 2);
                     if (padforled.btns[0] & 0x01) {
                         p3out ^= 0x40;

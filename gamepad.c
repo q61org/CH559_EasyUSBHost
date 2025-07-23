@@ -151,24 +151,7 @@ uint8_t gamepad_parse_hid_data(UDevInterface *iface, __xdata uint8_t *data, uint
                             b = 0;
                         }
                     }
-                    //uint8_t nonzero = 0;
-                    for (uint8_t n = 0; n < 4; n++) {
-                        uint8_t bpress = b & (1 << n);
-                        if (bpress) {
-                         //   nonzero = 1;
-                            if (dst->dpads[dpadi].btn[n] < 255) {
-                                dst->dpads[dpadi].btn[n]++;
-                            }
-                        } else {
-                            dst->dpads[dpadi].btn[n] = 0;
-                        }
-                    }
-                   /* if (!udbtn_done && nonzero) {
-                        for (uint8_t n = 0; n < 4; n++) {
-                            udbtn[n] = dst->dpads[dpadi].btn[n];
-                        }
-                        udbtn_done = 1;
-                    }*/
+                    dst->dpads[dpadi] = b;
                     dst->num_dpads = ++dpadi;
                 }
                 break;
@@ -176,7 +159,8 @@ uint8_t gamepad_parse_hid_data(UDevInterface *iface, __xdata uint8_t *data, uint
                 break;
         }
     }
-    gamepad_get_unified_dpad(dst, &dst->unified_dpad);
+    gamepad_get_unified_dpad(dst, &b);
+    dst->unified_dpad = b;
     return (bitpos >> 3);
 }
 
@@ -186,15 +170,10 @@ void gamepad_state_clear(GamepadState *dst)
     dst->num_xys = 0;
     dst->num_trigs = 0;
     dst->num_btns = 0;
-    dst->unified_dpad.btn[0] = 0;
-    dst->unified_dpad.btn[1] = 0;
-    dst->unified_dpad.btn[2] = 0;
-    dst->unified_dpad.btn[3] = 0;
+    dst->unified_dpad = 0;
+    dst->reserved0 = 0;
     for (uint8_t i = 0; i < GAMEPAD_MAX_NUM_DPAD; i++) {
-        dst->dpads[i].btn[0] = 0;
-        dst->dpads[i].btn[1] = 0;
-        dst->dpads[i].btn[2] = 0;
-        dst->dpads[i].btn[3] = 0;
+        dst->dpads[i] = 0;
     }
     for (uint8_t i = 0; i < GAMEPAD_MAX_NUM_BUTTON / 8; i++) {
         dst->btns[i] = 0;
@@ -203,26 +182,10 @@ void gamepad_state_clear(GamepadState *dst)
 
 void gamepad_state_update(GamepadState *dst, GamepadState *src)
 {
-    for (uint8_t k = 0; k < 4; k++) {
-        if (src->unified_dpad.btn[k] == 0) {
-            dst->unified_dpad.btn[k] = 0;
-        } else {
-            if (dst->unified_dpad.btn[k] < 255) {
-                dst->unified_dpad.btn[k]++;
-            }
-        }
-    }
+    dst->unified_dpad = src->unified_dpad;
     dst->num_dpads = src->num_dpads;
     for (uint8_t i = 0; i < src->num_dpads; i++) {
-        for (uint8_t k = 0; k < 4; k++) {
-            if (src->dpads[i].btn[k] == 0) {
-                dst->dpads[i].btn[k] = 0;
-            } else {
-                if (dst->dpads[i].btn[k] < 255) {
-                    dst->dpads[i].btn[k]++;
-                }
-            }
-        }
+        dst->dpads[i] = src->dpads[i];
     }
     dst->num_xys = src->num_xys;
     for (uint8_t i = 0; i < src->num_xys; i++) {
@@ -239,42 +202,30 @@ void gamepad_state_update(GamepadState *dst, GamepadState *src)
     }
 }
 
-void gamepad_get_unified_dpad(GamepadState *src, GamepadDPad *dst)
+void gamepad_get_unified_dpad(GamepadState *src, uint8_t *dst)
 {
-    dst->btn[0] = 0;
-    dst->btn[1] = 0;
-    dst->btn[2] = 0;
-    dst->btn[3] = 0;
+    *dst = 0;
 
     // just use the first non-neutral axis
     for (uint8_t i = 0; i < src->num_dpads; i++) {
-        if (src->dpads[i].dir.up || src->dpads[i].dir.down || src->dpads[i].dir.left || src->dpads[i].dir.right) {
-            if (src->dpads[i].dir.left) {
-                dst->dir.left = 1;
-            } else if (src->dpads[i].dir.right) {
-                dst->dir.right = 1;
-            }
-            if (src->dpads[i].dir.up) {
-                dst->dir.up = 1;
-            } else if (src->dpads[i].dir.down) {
-                dst->dir.down = 1;
-            }
+        if (src->dpads[i] != 0) {
+            *dst = src->dpads[i];
             break;
         }
     }
-    if (dst->dir.up || dst->dir.down || dst->dir.left || dst->dir.right) return;
+    if (*dst) return;
 
     for (uint8_t i = 0; i < src->num_xys; i++) {
         if (src->xys[i].x < -64 || src->xys[i].x >= 64 || src->xys[i].y < -64 || src->xys[i].y >= 64) {
             if (src->xys[i].x < -64)  {
-                dst->dir.left = 1;
+                *dst |= GAMEPAD_DPAD_LEFT;
             } else if (src->xys[i].x >= 64) {
-                dst->dir.right = 1;
+                *dst |= GAMEPAD_DPAD_RIGHT;
             }
             if (src->xys[i].y < -64)  {
-                dst->dir.up = 1;
+                *dst |= GAMEPAD_DPAD_UP;
             } else if (src->xys[i].y >= 64) {
-                dst->dir.down = 1;
+                *dst |= GAMEPAD_DPAD_DOWN;
             }
             break;
         }
@@ -292,19 +243,15 @@ uint8_t gamepad_state_isequal(GamepadState *a, GamepadState *b, uint8_t unified_
     if (unified_only) {
         if (a->btns[0] != b->btns[0]) return 0;
         if ((a->btns[1] & 0x0f) != (b->btns[1] & 0x0f)) return 0;
-        for (k = 0; k < 4; k++) {
-            if (!a->unified_dpad.btn[k] != !b->unified_dpad.btn[k]) return 0;
-        }
+        if (a->unified_dpad != b->unified_dpad) return 0;
         return 1;
     }
-    
+
     for (i = 0; i < GAMEPAD_MAX_NUM_BUTTON / 8; i++) {
         if (!a->btns[i] != !b->btns[i]) return 0;
     }
     for (i = 0; i < a->num_dpads; i++) {
-        for (k = 0; k < 4; k++) {
-            if (!a->dpads[i].btn[k] != !b->dpads[i].btn[k]) return 0;
-        }
+        if (a->dpads[i] != b->dpads[i]) return 0;
     }
     for (i = 0; i < a->num_xys; i++) {
         if (a->xys[i].x != b->xys[i].x) return 0;
