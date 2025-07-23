@@ -6,7 +6,12 @@
 #define GAMEPAD_MAX_NUM_DPAD 2
 #define GAMEPAD_MAX_NUM_XY 4
 #define GAMEPAD_MAX_NUM_TRIGGER 4
-#define GAMEPAD_MAX_NUM_BUTTON 12
+#define GAMEPAD_MAX_NUM_BUTTON 16
+
+#define GAMEPAD_DPAD_UP 1
+#define GAMEPAD_DPAD_DOWN 2
+#define GAMEPAD_DPAD_LEFT 4
+#define GAMEPAD_DPAD_RIGHT 8
 
 union gamepad_dpad_t {
     struct {
@@ -33,7 +38,7 @@ struct gamepad_state_t {
     union gamepad_dpad_t dpads[GAMEPAD_MAX_NUM_DPAD];
     struct gamepad_xy_t xys[GAMEPAD_MAX_NUM_XY];
     uint8_t trigs[GAMEPAD_MAX_NUM_TRIGGER];
-    uint8_t btns[GAMEPAD_MAX_NUM_BUTTON];
+    uint8_t btns[GAMEPAD_MAX_NUM_BUTTON / 8];
 };
 typedef struct gamepad_state_t __xdata GamepadState;
 

@@ -355,13 +355,15 @@ void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
 
     if ((fmt & OUTPUT_FORMAT_WITHCOUNT) == 0) {
         ringbuf_write(&g_rb_out, 'N');
-        for (uint8_t i = 0; i < 12; i += 4) {
-            d = 0;
-            for (uint8_t k = 0; k < 4; k++) {
-                if (i + k >= pad->num_btns) break;
-                d |= (pad->btns[i + k] != 0) ? (1 << k) : 0;
+        d = 0;
+        for (i = 0; i < 12; i++) {
+            if (i < pad->num_btns) {
+                d |= (pad->btns[i >> 3] & (1 << (i & 7))) ? (1 << (i & 3)) : 0;
             }
-            rb_out_hex1char(&g_rb_out, d);
+            if ((i & 3) == 3) {
+                rb_out_hex1char(&g_rb_out, d);
+                d = 0;
+            }
         }
     }
 
@@ -378,6 +380,8 @@ void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
             break;
 
         case OUTPUT_FORMAT_FULLLAYOUT | OUTPUT_FORMAT_WITHCOUNT:
+            DEBUG_OUT("no counts...\n");
+#if 0
             ringbuf_write(&g_rb_out, 'g');
             for (uint8_t k = 0; k < 4; k++) {
                 rb_out_hex2char(&g_rb_out, pad->unified_dpad.btn[k]);
@@ -392,6 +396,7 @@ void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
             for (i = 0; i < pad->num_btns; i++) {
                 rb_out_hex2char(&g_rb_out, pad->btns[i]);
             }
+#endif
             break;
     }
 
@@ -604,11 +609,11 @@ void main()
                 if (g_kbd_isXinput[targetKbdIndex]) {
                     uint8_t k, btnswap;
                     gamepad_parse_hid_data(&iface_xinput, buf, len, &padforled);
-                    for (k = 0; k < 4; k++) {
-                        btnswap = padforled.btns[8 + k];
-                        padforled.btns[8 + k] = padforled.btns[k];
-                        padforled.btns[k] = btnswap;
-                    }
+                    btnswap = padforled.btns[1] & 0x0f;
+                    padforled.btns[1] &= 0xf0;
+                    padforled.btns[1] |= padforled.btns[0] & 0x0f;
+                    padforled.btns[0] &= 0xf0;
+                    padforled.btns[0] |= btnswap;
                 } else {
                     gamepad_parse_hid_data(iface, buf, len, &padforled);
                 }
@@ -629,21 +634,21 @@ void main()
                         unidir ^= 0x08;
                     }
                     p3out ^= (unidir << 2);
-                    if (padforled.btns[0] != 0) {
+                    if (padforled.btns[0] & 0x01) {
                         p3out ^= 0x40;
                     }
-                    if (padforled.btns[1] != 0) {
+                    if (padforled.btns[0] & 0x02) {
                         p3out ^= 0x80;
                     }
-                    P3 &= p3out; // | 3;
+                    P3 &= p3out | 3;
                     P3 |= p3out;
-                    if (padforled.btns[2] != 0) {
+                    if (padforled.btns[0] & 0x04) {
                         p1out ^= 0x20;
                     }
-                    if (padforled.btns[3] != 0) {
+                    if (padforled.btns[0] & 0x08) {
                         p1out ^= 0x40;
                     }
-                    if (padforled.btns[4] != 0) {
+                    if (padforled.btns[0] & 0x10) {
                         p1out ^= 0x80;
                     }
                     P1 &= p1out | 0x1f;

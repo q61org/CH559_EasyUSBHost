@@ -75,9 +75,9 @@ uint8_t gamepad_parse_hid_data(UDevInterface *iface, __xdata uint8_t *data, uint
                     b = gamepad_get_bit(data, bitpos++);
                     if (btni >= GAMEPAD_MAX_NUM_BUTTON) continue;
                     if (b) {
-                        if (dst->btns[btni] < 255) dst->btns[btni]++;
+                        dst->btns[btni >> 3] |= (1 << (btni & 7));
                     } else {
-                        dst->btns[btni] = 0;
+                        dst->btns[btni >> 3] &= (0xff ^ (1 << (btni & 7)));
                     }
                     btni++;
                     dst->num_btns = btni;
@@ -176,16 +176,6 @@ uint8_t gamepad_parse_hid_data(UDevInterface *iface, __xdata uint8_t *data, uint
                 break;
         }
     }
-    //DEBUG_OUT("\n");
-   /* for (uint8_t n = 0; n < 4; n++) {
-        if (udbtn[n]) {
-            if (dst->unified_dpad.btn[n] < 255) {
-                dst->unified_dpad.btn[n]++;
-            }
-        } else {
-            dst->unified_dpad.btn[n] = 0;
-        }
-    }*/
     gamepad_get_unified_dpad(dst, &dst->unified_dpad);
     return (bitpos >> 3);
 }
@@ -206,7 +196,7 @@ void gamepad_state_clear(GamepadState *dst)
         dst->dpads[i].btn[2] = 0;
         dst->dpads[i].btn[3] = 0;
     }
-    for (uint8_t i = 0; i < GAMEPAD_MAX_NUM_BUTTON; i++) {
+    for (uint8_t i = 0; i < GAMEPAD_MAX_NUM_BUTTON / 8; i++) {
         dst->btns[i] = 0;
     }
 }
@@ -244,58 +234,11 @@ void gamepad_state_update(GamepadState *dst, GamepadState *src)
         dst->trigs[i] = src->trigs[i];
     }
     dst->num_btns = src->num_btns;
-    for (uint8_t i = 0; i < src->num_btns; i++) {
-        if (src->btns[i] == 0) {
-            dst->btns[i] = 0;
-        } else {
-            if (dst->btns[i] < 255) {
-                dst->btns[i]++;
-            }
-        }
+    for (uint8_t i = 0; i < GAMEPAD_MAX_NUM_BUTTON / 8; i++) {
+        dst->btns[i] = src->btns[i];
     }
 }
 
-#if 0
-void gamepad_get_unified_digital_xy(GamepadState *src, GamepadXY *dst)
-{
-    dst->x = 0x80;
-    dst->y = 0x80;
-
-    // just use the first non-neutral axis
-    for (uint8_t i = 0; i < src->num_dpads; i++) {
-        if (src->dpads[i].dir.up || src->dpads[i].dir.down || src->dpads[i].dir.left || src->dpads[i].dir.right) {
-            if (src->dpads[i].dir.left) {
-                dst->x = 0;
-            } else if (src->dpads[i].dir.right) {
-                dst->x = 0xff;
-            }
-            if (src->dpads[i].dir.up) {
-                dst->y = 0;
-            } else if (src->dpads[i].dir.down) {
-                dst->y = 0xff;
-            }
-            break;
-        }
-    }
-    if (dst->x != 0x80 || dst->y != 0x80) return;
-
-    for (uint8_t i = 0; i < src->num_xys; i++) {
-        if (src->xys[i].x < 0x40 || src->xys[i].x >= 0xc0 || src->xys[i].y < 0x40 || src->xys[i].y >= 0xc0) {
-            if (src->xys[i].x < 0x40)  {
-                dst->x = 0;
-            } else if (src->xys[i].x >= 0xc0) {
-                dst->x = 0xff;
-            }
-            if (src->xys[i].y < 0x40)  {
-                dst->y = 0;
-            } else if (src->xys[i].y >= 0xc0) {
-                dst->y = 0xff;
-            }
-            break;
-        }
-    }
-}
-#endif
 void gamepad_get_unified_dpad(GamepadState *src, GamepadDPad *dst)
 {
     dst->btn[0] = 0;
@@ -346,14 +289,17 @@ uint8_t gamepad_state_isequal(GamepadState *a, GamepadState *b, uint8_t unified_
     if (a->num_xys != b->num_xys) return 0;
     if (a->num_trigs != b->num_trigs) return 0;
     if (a->num_btns != b->num_btns) return 0;
-    for (i = 0; i < a->num_btns; i++) {
-        if (!a->btns[i] != !b->btns[i]) return 0;
-    }
     if (unified_only) {
+        if (a->btns[0] != b->btns[0]) return 0;
+        if ((a->btns[1] & 0x0f) != (b->btns[1] & 0x0f)) return 0;
         for (k = 0; k < 4; k++) {
             if (!a->unified_dpad.btn[k] != !b->unified_dpad.btn[k]) return 0;
         }
         return 1;
+    }
+    
+    for (i = 0; i < GAMEPAD_MAX_NUM_BUTTON / 8; i++) {
+        if (!a->btns[i] != !b->btns[i]) return 0;
     }
     for (i = 0; i < a->num_dpads; i++) {
         for (k = 0; k < 4; k++) {
