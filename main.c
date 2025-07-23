@@ -69,8 +69,6 @@ volatile inline uint32_t seconds()
 
 // ================
 
-#define p3_assert_interrupt()  (P3 &= 0xfb)
-#define p3_clear_interrupt()   (P3 |= 4)
 #define p3_assert_inact()      (P3 &= 0xfe)
 #define p3_clear_inact()       (P3 |= 1)
 #define p3_assert_detect()     (P3 &= 0xfd)
@@ -166,93 +164,63 @@ int8_t findFreeKbdStateIndex()
 void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
 {
     DEBUG_OUT("CALLBACK: dev[%d] @%d, is_attach=%d\n", devIndex, dev->address, is_attach);
-    p3_clear_interrupt();
     if (is_attach) {
         if (dev->class == USB_DEV_CLASS_HUB) {
             ;
-        } else { //dev->vid_h == 0x04 || dev->vid_l == 0x5e) {
-            int8_t idx = findFreeKbdStateIndex();
-            if (idx < 0) {
-                DEBUG_OUT("CALLBACK: no more keyboard!\n");
-                return;
-            }
-            g_kbd_devIndex[idx] = devIndex;
-            g_kbd_devAddr[idx] = dev->address;
-            if (dev->class == 255) {
-                DEBUG_OUT("CALLBACK: xinput mode\n");
-                g_kbd_isXinput[idx] = 1;
-            } else {
-                DEBUG_OUT("CALLBACK: normal hid mode\n");
-                g_kbd_isXinput[idx] = 0;
-            }
-            g_kbd_interfNo[idx] = 0;
+        } else { 
+            // find suitable interface
+            int8_t interf_idx = -1;
+            uint8_t interf_xinput = 0;
             for (uint8_t i = 0; i < MAX_INTERFACES_PER_DEVICE; i++) {
-                if (dev->iface[i].ep_in) {
-                    g_kbd_interfNo[idx] = i;
+                if (dev->iface[i].ep_in == 0) continue;
+                DEBUG_OUT("CALLBACK: if[%d] i=%d c=%d sc=%d\n", i, dev->iface[i].interface, dev->iface[i].class, dev->iface[i].subclass);
+                if (dev->iface[i].class == USB_DEV_CLASS_HID && (dev->iface[i].usage == Usage_JOYSTICK || dev->iface[i].usage == 5) && dev->iface[i].spec.hid != NULL) {
+                    // standard hid joystick/gamepad
+                    interf_idx = i;
                     break;
                 }
+                if (dev->iface[i].class == USB_DEV_CLASS_VEN_SPEC && dev->iface[i].subclass == 93) {
+                    // xinput endpoint
+                    interf_idx = i;
+                    interf_xinput = 1;
+                    break;
+                }
+                /*
+                if (dev->iface[i].class == USB_DEV_CLASS_VEN_SPEC && dev->iface[i].subclass == 71) {
+                    // xbox controller
+                    interf_idx = i;
+                    interf_xinput = 1;
+                    break;
+                }
+                */
             }
-            DEBUG_OUT("CALLBACK: using interf index %d\n", g_kbd_interfNo[idx]);
-            gamepad_state_clear(&g_state[idx]);
-            g_numKbds++;
-            DEBUG_OUT("CALLBACK: %d gamepad(s) now connected\n", g_numKbds);
-            uint8_t r = hiddevice_start_input(devIndex, 0);
-            DEBUG_OUT("start input: %d\n", r);
+            if (interf_idx < 0) {
+                DEBUG_OUT("CALLBACK: no suitable interface found\n");
+            } else {
+                int8_t idx = findFreeKbdStateIndex();
+                if (idx < 0) {
+                    DEBUG_OUT("CALLBACK: no more keyboard!\n");
+                    return;
+                }
+                g_kbd_devIndex[idx] = devIndex;
+                g_kbd_devAddr[idx] = dev->address;
+                if (interf_xinput) {
+                    DEBUG_OUT("CALLBACK: xinput mode\n");
+                    g_kbd_isXinput[idx] = 1;
+                } else {
+                    DEBUG_OUT("CALLBACK: normal hid mode\n");
+                    g_kbd_isXinput[idx] = 0;
+                }
+                g_kbd_interfNo[idx] = interf_idx;
+                DEBUG_OUT("CALLBACK: using interf index %d\n", g_kbd_interfNo[idx]);
+                gamepad_state_clear(&g_state[idx]);
+                g_numKbds++;
+                DEBUG_OUT("CALLBACK: %d gamepad(s) now connected\n", g_numKbds);
+                uint8_t r = hiddevice_start_input(devIndex, 0);
+                DEBUG_OUT("start input: %d\n", r);
+            }
         }
-    }
-#if 0
-        for (uint8_t i = 0; i < dev->num_ifaces; i++) {
-            DEBUG_OUT("CALLBACK: usage %d\n", dev->iface[i].usage);
-            if (dev->vid_h != 0x04 || dev->vid_l != 0x5e) {
-                continue;
-            }
-            /*if (dev->iface[i].usage != Usage_JOYSTICK) {
-                continue;
-            }*/
-            int8_t idx = findFreeKbdStateIndex();
-            if (idx < 0) {
-                DEBUG_OUT("CALLBACK: no more keyboard!\n");
-                return;
-            }
-            g_kbd_devIndex[idx] = devIndex;
-            g_kbd_devAddr[idx] = dev->address;
-            //kbdparse_init(&g_kbd[idx]);
-            g_numKbds++;
-            DEBUG_OUT("CALLBACK: %d keyboard(s) now connected\n", g_numKbds);
-
-            if (g_raw_mode) {
-                ringbuf_write(&g_rb_out, bin2hexchar(dev->address >> 4));
-                ringbuf_write(&g_rb_out, bin2hexchar(dev->address));
-                ringbuf_write(&g_rb_out, 'A');
-                ringbuf_write(&g_rb_out, '0');
-                ringbuf_write(&g_rb_out, '0');
-                ringbuf_write(&g_rb_out, ';');
-            }
-            uint8_t locks = g_default_locks;
-            if (!g_raw_mode || !cfg_separatelock()) for (int8_t k = 0; k < kbd_maxcount(); k++) {
-                if (k == idx) continue;
-                if (!kbd_isconnectedat(k)) continue;
-                locks = g_kbd[k].locks;
-                break;
-            }
-            g_kbd[idx].locks = locks;
-
-            //uint8_t r = hiddevice_start_input(devIndex, Usage_JOYSTICK);
-            //DEBUG_OUT("start input: %d\n", r);
-        //    setHIDDeviceLED(devIndex, Usage_KEYBOARD, locks);
-            if (g_raw_mode) {
-                ringbuf_write(&g_rb_out, bin2hexchar(dev->address >> 4));
-                ringbuf_write(&g_rb_out, bin2hexchar(dev->address));
-                ringbuf_write(&g_rb_out, 'L');
-                ringbuf_write(&g_rb_out, '0');
-                ringbuf_write(&g_rb_out, bin2hexchar(locks));
-                ringbuf_write(&g_rb_out, ';');
-            }
-            return;
-        }
-    }
-#endif
-     else {
+    } else {
         for (uint8_t i = 0; i < kbd_maxcount(); i++) {
             if (g_kbd_devIndex[i] == (int8_t)devIndex) {
                 g_kbd_devIndex[i] = -1;
@@ -280,7 +248,7 @@ uint8_t strlen_xdata_s(const __xdata char *str, uint8_t maxlen)
 void uartcmd_process(const __xdata char *cmd)
 {
     uint8_t len = strlen_xdata_s(cmd, UART_CMD_MAXLEN);
-    DEBUG_OUT("UART command [%d] %s\n", len, cmd);
+    //DEBUG_OUT("UART command [%d] %s\n", len, cmd);
     if (cmd[0] == '!') {
         if (cmd[1] == 's' && len == 2) {
             static __xdata uint8_t id[8];
@@ -489,11 +457,6 @@ void main()
     init_watchdog(1);
 
     DEBUG_OUT("--- Ready ---\n");
-    //DEBUG_OUT("P3 DIR=%02x PU=%02x P3=%02x\n", P3_DIR, P3_PU, P3);
-    //DEBUG_OUT("P2 DIR=%02x PU=%02x P2=%02x\n", P2_DIR, P2_PU, P2);
-    //DEBUG_OUT("PORT_CFG %02x\n", PORT_CFG);
-    //ringbuf_write(&g_rb_out, '!');
-
     static __xdata uint32_t lasthubchecksecs;
     lasthubchecksecs = seconds();
     uint8_t lastsubtick = 0;
@@ -590,15 +553,15 @@ void main()
             static uint16_t pollsn = 0;
             uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], g_kbd_interfNo[targetKbdIndex], buf, sizeof(buf), &iface);
             ++pollsn;
-            //uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], Usage_JOYSTICK, buf, sizeof(buf), &iface);
             if (len > 0) {
-                /*DEBUG_OUT("pollHIDDev %04x @%d [%d] ", pollsn, targetKbdIndex, len);
+#if 0
+                DEBUG_OUT("pollHIDDev %04x @%d [%d] ", pollsn, targetKbdIndex, len);
             	for (uint8_t iii = 0; iii < len; iii++)
 	            {
 		            DEBUG_OUT("%02X ", buf[iii]);
 	            }
-                DEBUG_OUT("\n");*/
-
+                DEBUG_OUT("\n");
+#endif
                 gamepad_state_clear(&padforled);
                 if (g_kbd_isXinput[targetKbdIndex]) {
                     uint8_t k, btnswap;
@@ -611,8 +574,6 @@ void main()
                 } else {
                     gamepad_parse_hid_data(iface, buf, len, &padforled);
                 }
-                //static GamepadDPad dpad;
-                //gamepad_get_unified_dpad(&padforled, &dpad);
                 if (ledout_done == 0) {
                     uint8_t p3out = 0xfc;
                     uint8_t p1out = 0xe0;
@@ -624,7 +585,7 @@ void main()
                     if (padforled.btns[0] & 0x02) {
                         p3out ^= 0x80;
                     }
-                    P3 &= p3out | 3;
+                    P3 &= p3out;// | 3;
                     P3 |= p3out;
                     if (padforled.btns[0] & 0x04) {
                         p1out ^= 0x20;
