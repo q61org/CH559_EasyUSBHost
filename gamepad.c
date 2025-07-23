@@ -251,7 +251,7 @@ uint8_t gamepad_state_isequal(GamepadState *a, GamepadState *b, uint8_t unified_
     }
 
     for (i = 0; i < GAMEPAD_MAX_NUM_BUTTON / 8; i++) {
-        if (!a->btns[i] != !b->btns[i]) return 0;
+        if (a->btns[i] != b->btns[i]) return 0;
     }
     for (i = 0; i < a->num_dpads; i++) {
         if (a->dpads[i] != b->dpads[i]) return 0;
