@@ -57,9 +57,12 @@ uint8_t gamepad_parse_hid_data(UDevInterface *iface, __xdata uint8_t *data, uint
 //    uint8_t udbtn_done = 0;
     uint8_t b = 0;
 
-    for (uint8_t i = 0; i < iface->spec.hid.num_reports; i++) {
+    if (iface->spec.hid == NULL) {
+        return 0;
+    }
+    for (uint8_t i = 0; i < iface->spec.hid->num_reports; i++) {
         if (bitpos >= bitlen) break;
-        HIDReportSpec *sp = &iface->spec.hid.reports[i];
+        struct hid_report_spec_t *sp = &iface->spec.hid->reports[i];
         switch (sp->type) {
             case JOYSTICK_INPUT_TYPE_CONST: 
                 //DEBUG_OUT(" C%d", bitpos);

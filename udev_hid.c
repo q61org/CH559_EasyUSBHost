@@ -20,10 +20,10 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 {
 #define addjoyspec() { \
 	if (joyi < UDEV_HID_MAX_NUM_REPORTS) { \
-		dst_iface->spec.hid.reports[joyi].type = curspec_type; \
-		dst_iface->spec.hid.reports[joyi].size = curspec_size; \
-		dst_iface->spec.hid.reports[joyi].count = curspec_count; \
-		dst_iface->spec.hid.num_reports = ++joyi; \
+		dst_iface->spec.hid->reports[joyi].type = curspec_type; \
+		dst_iface->spec.hid->reports[joyi].size = curspec_size; \
+		dst_iface->spec.hid->reports[joyi].count = curspec_count; \
+		dst_iface->spec.hid->num_reports = ++joyi; \
 	} else { \
 		DEBUG_OUT("too many hid reports!\n"); \
 	} \
@@ -169,8 +169,9 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 
 void DEBUG_OUT_JOYSTICK_REPORTS(UDevInterface *iface)
 {
-	for (uint8_t i = 0; i < iface->spec.hid.num_reports; i++) {
-		HIDReportSpec *rep = &iface->spec.hid.reports[i];
+	if (iface->spec.hid == NULL) return;
+	for (uint8_t i = 0; i < iface->spec.hid->num_reports; i++) {
+		struct hid_report_spec_t *rep = &iface->spec.hid->reports[i];
 		DEBUG_OUT("HID input: %d, size %d, count %d\n", rep->type, rep->size, rep->count);
 	}
 }

@@ -50,7 +50,7 @@ uint8_t hubdevice_getDescriptor(uint8_t devIndex)
 		DEBUG_OUT(" %02x", RxBuffer[i]);
 	}
 	DEBUG_OUT("\n");
-	iface->spec.hub.num_ports = ((PXUSB_HUB_DESCR)receiveDataBuffer)->bNbrPorts;
+	iface->spec.hub->num_ports = ((PXUSB_HUB_DESCR)receiveDataBuffer)->bNbrPorts;
 	return 0;
 }
 
@@ -147,7 +147,7 @@ rescan: // using loops instead of recursion to save on stack
 		UDevInterface *iface = &dev->iface[ii];
 		if (iface->class != USB_DEV_CLASS_HUB) continue;
 
-		for (; pi <= iface->spec.hub.num_ports; pi++) {
+		for (; pi <= iface->spec.hub->num_ports; pi++) {
 			uint8_t childIndex = findDeviceIndexAtHubPort(devIndex, pi);
 			if (childIndex == 0xff) continue;
 
@@ -163,6 +163,7 @@ rescan: // using loops instead of recursion to save on stack
 	}
 	DEBUG_OUT("Device @%d (hub @%d port %d) disconnected.\n", dev->address, dev->parentDevIndex + FIRST_USB_DEV_ID, dev->parentDevPortIndex);
 	callAttachCallback(devIndex, dev, 0);
+	detachAllIFaceSpecFromDevice(dev);
 	dev->connected = 0;
 	if (depth > 0) {
 		--depth;
@@ -179,7 +180,8 @@ uint8_t checkHubConnections()
 		if (!USBdevs[di].connected) continue;
 		UDevInterface *iface = hubdevice_findInterface(di);
 		if (iface == NULL) continue;
-		if (iface->spec.hub.num_ports == 0) continue;
+		if (iface->spec.hub == NULL) continue;
+		if (iface->spec.hub->num_ports == 0) continue;
         uint8_t hub_addr = di + FIRST_USB_DEV_ID;
 
 		selectUSBDevice(di);
@@ -193,15 +195,15 @@ uint8_t checkHubConnections()
 					DEBUG_OUT(" %02x", RxBuffer[k]);
 				}
 				DEBUG_OUT("\n");
-				iface->spec.hub.port_flags |= RxBuffer[0];
+				iface->spec.hub->port_flags |= RxBuffer[0];
 			}
 		} else if (s != 42) {
 			DEBUG_OUT("Hub @%d error %d\n", hub_addr, s);
 		}
 
-		for (uint8_t pi = 1; pi <= iface->spec.hub.num_ports; pi++) {
+		for (uint8_t pi = 1; pi <= iface->spec.hub->num_ports; pi++) {
 			clear_watchdog();
-			if ((iface->spec.hub.port_flags & (1 << pi)) == 0) {
+			if ((iface->spec.hub->port_flags & (1 << pi)) == 0) {
 				continue;
 			}
 			DEBUG_OUT("Hub @%d: port %d status change flagged, checking.\n", hub_addr, pi);
@@ -211,13 +213,13 @@ uint8_t checkHubConnections()
 				break;
 			}
             uint8_t need_reset = 0;
-			if ((RxBuffer[0] & 1) == ((iface->spec.hub.port_connected >> pi) & 1)) {
+			if ((RxBuffer[0] & 1) == ((iface->spec.hub->port_connected >> pi) & 1)) {
 				DEBUG_OUT("Hub @%d: port %d no connection change.\n", hub_addr, pi);
                 if (!(RxBuffer[0] & 2)) {
                     DEBUG_OUT("Hub @%d: port %d is disabled, disconnecting. (will reset later.)\n", hub_addr, pi);
                     s = hubdevice_clearPortFeature(di, pi, HUB_C_PORT_ENABLE);
                     disconnectDeviceAtIndex(findDeviceIndexAtHubPort(di, pi));
-                    iface->spec.hub.port_connected &= ((1 << pi) ^ 0xff);
+                    iface->spec.hub->port_connected &= ((1 << pi) ^ 0xff);
                     need_reset = 1;
                 } else {
 				//DEBUG_OUT("  port status: %02x %02x\n", RxBuffer[0], RxBuffer[1]);
@@ -253,19 +255,19 @@ uint8_t checkHubConnections()
 					continue;
 				}
 				initializeRootHubConnection(USBdevs[di].rootHubIndex, di, pi, speed);
-				iface->spec.hub.port_connected |= (1 << pi);
+				iface->spec.hub->port_connected |= (1 << pi);
 			} else {
 				//DEBUG_OUT("Hub %d: port %d disconnected.\n", i, pi);
 				uint8_t childIndex = findDeviceIndexAtHubPort(di, pi);
 				if (childIndex != 0xff) {
 					disconnectDeviceAtIndex(childIndex);
 				}
-				iface->spec.hub.port_connected &= ((1 << pi) ^ 0xff);
+				iface->spec.hub->port_connected &= ((1 << pi) ^ 0xff);
 			}
 			s = hubdevice_clearPortFeature(di, pi, HUB_C_PORT_CONNECTION);
 			DEBUG_DUMP_USB_TREE();
 		}
-		iface->spec.hub.port_flags = 0;
+		iface->spec.hub->port_flags = 0;
 	}
 	return (0);
 }
@@ -287,22 +289,22 @@ uint8_t hubdevice_init_endpoint(USBDevice *dev, UDevInterface *iface, uint8_t en
     }
     if (hubdevice_calculate_depth(dev) >= USB_HUB_MAX_DEPTH) {
         DEBUG_OUT("Hub @%d: too many levels, children will not be enumated.\n", dev->address);
-        dev->iface->spec.hub.num_ports = 0;
+        dev->iface->spec.hub->num_ports = 0;
         return 0;
     }
     uint8_t di = dev->address - FIRST_USB_DEV_ID; // FIXME!: indexing
     hubdevice_getDescriptor(di);
-    //DEBUG_OUT("Hub has %d ports.\n", iface->spec.hub.num_ports);
-    for (uint8_t pi = 0; pi < iface->spec.hub.num_ports; pi++) {
+    //DEBUG_OUT("Hub has %d ports.\n", iface->spec.hub->num_ports);
+    for (uint8_t pi = 0; pi < iface->spec.hub->num_ports; pi++) {
         hubdevice_setPortFeature(di, pi + 1, HUB_PORT_POWER);
     }
-    for (uint8_t pi = 0; pi < iface->spec.hub.num_ports; pi++) {
+    for (uint8_t pi = 0; pi < iface->spec.hub->num_ports; pi++) {
         hubdevice_clearPortFeature(di, pi + 1, HUB_C_PORT_CONNECTION);
     }/*
-    for (uint8_t pi = 0; pi < iface->spec.hub.num_ports; pi++) {
+    for (uint8_t pi = 0; pi < iface->spec.hub->num_ports; pi++) {
         hubdevice_getPortStatus(di, pi + 1);
     }*/
-    iface->spec.hub.port_flags = 0xff;
-    iface->spec.hub.port_connected = 0;
+    iface->spec.hub->port_flags = 0xff;
+    iface->spec.hub->port_connected = 0;
     return 0;
 }

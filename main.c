@@ -141,7 +141,7 @@ uint8_t hexchar2bin(const __xdata char *str)
     return r;
 }
 
-#define MAX_NUM_KEYBOARDS 4
+#define MAX_NUM_KEYBOARDS 8
 int8_t __xdata g_kbd_devIndex[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_kbd_devAddr[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_numKbds;
@@ -170,7 +170,7 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
     if (is_attach) {
         if (dev->class == USB_DEV_CLASS_HUB) {
             ;
-        } else if (1) { //dev->vid_h == 0x04 || dev->vid_l == 0x5e) {
+        } else { //dev->vid_h == 0x04 || dev->vid_l == 0x5e) {
             int8_t idx = findFreeKbdStateIndex();
             if (idx < 0) {
                 DEBUG_OUT("CALLBACK: no more keyboard!\n");
@@ -503,23 +503,25 @@ void main()
     uint8_t targetKbdIndex = 0;
     static GamepadState padforled;
 
+    static UDevSpecHID spec_xinput;
     static UDevInterface iface_xinput;
-    iface_xinput.spec.hid.reports[0].type = JOYSTICK_INPUT_TYPE_CONST;
-    iface_xinput.spec.hid.reports[0].size = 8;
-    iface_xinput.spec.hid.reports[0].count = 2;
-    iface_xinput.spec.hid.reports[1].type = JOYSTICK_INPUT_TYPE_DPAD;
-    iface_xinput.spec.hid.reports[1].size = 4;
-    iface_xinput.spec.hid.reports[1].count = 1;
-    iface_xinput.spec.hid.reports[2].type = JOYSTICK_INPUT_TYPE_BUTTON;
-    iface_xinput.spec.hid.reports[2].size = 1;
-    iface_xinput.spec.hid.reports[2].count = 12;
-    iface_xinput.spec.hid.reports[3].type = JOYSTICK_INPUT_TYPE_TRIGGER;
-    iface_xinput.spec.hid.reports[3].size = 8;
-    iface_xinput.spec.hid.reports[3].count = 2;
-    iface_xinput.spec.hid.reports[4].type = JOYSTICK_INPUT_TYPE_AXIS_POSNEG_16BIT;
-    iface_xinput.spec.hid.reports[4].size = 8;
-    iface_xinput.spec.hid.reports[4].count = 4;
-    iface_xinput.spec.hid.num_reports = 5;
+    iface_xinput.spec.hid = &spec_xinput;
+    spec_xinput.reports[0].type = JOYSTICK_INPUT_TYPE_CONST;
+    spec_xinput.reports[0].size = 8;
+    spec_xinput.reports[0].count = 2;
+    spec_xinput.reports[1].type = JOYSTICK_INPUT_TYPE_DPAD;
+    spec_xinput.reports[1].size = 4;
+    spec_xinput.reports[1].count = 1;
+    spec_xinput.reports[2].type = JOYSTICK_INPUT_TYPE_BUTTON;
+    spec_xinput.reports[2].size = 1;
+    spec_xinput.reports[2].count = 12;
+    spec_xinput.reports[3].type = JOYSTICK_INPUT_TYPE_TRIGGER;
+    spec_xinput.reports[3].size = 8;
+    spec_xinput.reports[3].count = 2;
+    spec_xinput.reports[4].type = JOYSTICK_INPUT_TYPE_AXIS_POSNEG_16BIT;
+    spec_xinput.reports[4].size = 8;
+    spec_xinput.reports[4].count = 4;
+    spec_xinput.num_reports = 5;
 
     while (1) {
         do {

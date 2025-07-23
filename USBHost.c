@@ -33,6 +33,8 @@ __xdata unsigned char SetPort = 0;	//todo really global?
 
 __xdata struct _RootHubDevice rootHubDevice[ROOT_HUB_COUNT];
 USBDevice USBdevs[MAX_USB_DEVICES];
+static UDevSpecHID g_spec_hid[MAX_SPEC_HID_T];
+static UDevSpecHub g_spec_hub[MAX_SPEC_HUB_T];
 UDevAttachCallback attachCallback;
 
 
@@ -61,6 +63,13 @@ void initUSB_Host()
 	USB_CTRL = bUC_HOST_MODE | bUC_INT_BUSY | bUC_DMA_EN;
 	UH_SETUP = bUH_SOF_EN;
 	USB_INT_FG = 0xFF;
+
+	for (uint8_t i = 0; i < MAX_SPEC_HID_T; i++) {
+		g_spec_hid[i].num_reports = 0;
+	}
+	for (uint8_t i = 0; i < MAX_SPEC_HUB_T; i++) {
+		g_spec_hub[i].num_ports = 0;
+	}
 
 	disableRootHubPort(0);
 	disableRootHubPort(1);
@@ -542,7 +551,9 @@ uint8_t allocateNewDeviceAddress(uint8_t hubIndex, uint8_t portIndex, uint8_t is
 	}
 	uint8_t devIdx = 0;
 	if (dev != NULL) {
-		devIdx = dev->iface[0].spec.hub.num_ports;
+		if (dev->iface[0].spec.hub != NULL) {
+			devIdx = dev->iface[0].spec.hub->num_ports;
+		}
 	}
 	for (; devIdx < MAX_USB_DEVICES; devIdx++) {
 		if (!USBdevs[devIdx].connected) {
@@ -550,6 +561,25 @@ uint8_t allocateNewDeviceAddress(uint8_t hubIndex, uint8_t portIndex, uint8_t is
 		}
 	}
 	return 0;
+}
+
+static UDevSpecHub *findFreeSpecHub()
+{
+	for (uint8_t i = 0; i < sizeof(g_spec_hub) / sizeof(g_spec_hub[0]); i++) {
+		if (g_spec_hub[i].num_ports == 0) {
+			return &g_spec_hub[i];
+		}
+	}
+	return NULL;
+}
+static UDevSpecHID *findFreeSpecHID()
+{
+	for (uint8_t i = 0; i < sizeof(g_spec_hid) / sizeof(g_spec_hid[0]); i++) {
+		if (g_spec_hid[i].num_reports == 0) {
+			return &g_spec_hid[i];
+		}
+	}
+	return NULL;
 }
 
 unsigned char initializeRootHubConnection(unsigned char rootHubIndex, uint8_t parentIndex, uint8_t parentPortIndex, uint8_t speed)
@@ -703,9 +733,15 @@ unsigned char initializeRootHubConnection(unsigned char rootHubIndex, uint8_t pa
 						}
 
 						if (currentInterface->bInterfaceClass == USB_DEV_CLASS_HUB) {
+							iface->spec.hub = findFreeSpecHub();
 							hubdevice_init_endpoint(dev, iface, d->bEndpointAddress);
-						} else if (currentInterface->bInterfaceSubClass == 0 || currentInterface->bInterfaceSubClass == 93) {
+						} else if (currentInterface->bInterfaceClass == USB_DEV_CLASS_HID 
+							|| (currentInterface->bInterfaceClass == 255 && currentInterface->bInterfaceSubClass == 93)) {
+							iface->spec.hid = findFreeSpecHID();
 							hiddevice_init_endpoint(dev, iface, d->bEndpointAddress);
+							if (iface->spec.hid->num_reports == 0) {
+								iface->spec.hid = NULL;
+							}
 						}
 					}
 					break;
@@ -795,6 +831,7 @@ unsigned char checkRootHubConnections()
 					if (!USBdevs[i].connected) continue;
 					USBdevs[i].connected = 0;
 					callAttachCallback(i, &USBdevs[i], 0);
+					detachAllIFaceSpecFromDevice(&USBdevs[i]);
 				}
 				s = ERR_USB_DISCON;
 			}
@@ -809,4 +846,12 @@ void setAttachCallback(UDevAttachCallback func) {
 void callAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach) {
 	if (attachCallback == NULL) return;
 	attachCallback(devIndex, dev, is_attach);
+}
+
+void detachAllIFaceSpecFromDevice(USBDevice *dev) {
+	for (uint8_t ii = 0; ii < MAX_INTERFACES_PER_DEVICE; ii++) {
+		if (dev->iface[ii].spec.hub == NULL) continue;
+		dev->iface[ii].spec.hub->num_ports = 0;
+		dev->iface[ii].spec.hub = NULL;
+	}
 }

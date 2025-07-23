@@ -15,6 +15,7 @@ struct udev_spec_hub_t
 	uint8_t port_connected;
 };
 #define USB_HUB_MAX_DEPTH 4
+typedef struct udev_spec_hub_t __xdata UDevSpecHub;
 
 struct hid_report_spec_t
 {
@@ -30,6 +31,7 @@ struct udev_spec_hid_t
 	uint8_t num_reports;
 	struct hid_report_spec_t reports[UDEV_HID_MAX_NUM_REPORTS];
 };
+typedef struct udev_spec_hid_t __xdata UDevSpecHID;
 
 struct udev_interface_t
 {
@@ -41,8 +43,8 @@ struct udev_interface_t
 	uint8_t ep_in;
 	uint8_t ep_out;
 	union {
-		struct udev_spec_hub_t hub;
-		struct udev_spec_hid_t hid;
+		struct udev_spec_hub_t *hub;
+		struct udev_spec_hid_t *hid;
 	} spec;
 };
 typedef struct udev_interface_t __xdata UDevInterface;
@@ -69,9 +71,11 @@ struct usbdevice_t
 };
 typedef struct usbdevice_t __xdata USBDevice;
 #define FIRST_USB_DEV_ID 16
-#define MAX_USB_DEVICES 6
+#define MAX_USB_DEVICES 12
 #define PARENT_NONE 255
 
+#define MAX_SPEC_HUB_T 8
+#define MAX_SPEC_HID_T 8
 
 typedef void __code (*UDevAttachCallback)(uint8_t dev_index, USBDevice *udev, uint8_t is_attach);
 
@@ -182,5 +186,6 @@ unsigned char checkRootHubConnections();
 
 void setAttachCallback(UDevAttachCallback func);
 void callAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach);
+void detachAllIFaceSpecFromDevice(USBDevice *dev);
 
 #endif

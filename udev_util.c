@@ -138,23 +138,27 @@ void DEBUG_DUMP_USB_DEVICE(USBDevice *dev, uint8_t depth)
 		for (uint8_t i = 0; i < depth + 1; i++) {
 			DEBUG_OUT("| ");
 		}
-		DEBUG_OUT("> interf %d", iface->interface);
-		DEBUG_OUT(" class %d", iface->class);
+		DEBUG_OUT("> %p if.%d", iface->spec.hub, iface->interface);
+		DEBUG_OUT(" cl.%d", iface->class);
 		DEBUG_OUT("(");
 		DEBUG_OUT_USB_DEV_CLASS(iface->class);
 		DEBUG_OUT(")");
 		if (iface->class != USB_DEV_CLASS_HUB) {
-			DEBUG_OUT(" usage %d", iface->usage);
+			DEBUG_OUT(" sc.%d", iface->subclass);
+			DEBUG_OUT(" us.%d", iface->usage);
 			DEBUG_OUT("(");
 			DEBUG_OUT_USB_REPORT_USAGE(iface->usage);
 			DEBUG_OUT(")");
+			DEBUG_OUT(" up.%d", iface->usagePage);
 		} else if (iface->class == USB_DEV_CLASS_HUB) {
-			DEBUG_OUT(" %d ports", iface->spec.hub.num_ports);
+			if (iface->spec.hub != NULL) {
+				DEBUG_OUT(" %d ports", iface->spec.hub->num_ports);
+			}
 		}
 		if (iface->ep_in) {
-			DEBUG_OUT(" endpt IN %02x", iface->ep_in);
+			DEBUG_OUT(" ep.IN %02x", iface->ep_in);
 		} else if (iface->ep_out) {
-			DEBUG_OUT(" endpt OUT %02x", iface->ep_out);
+			DEBUG_OUT(" ep.OUT %02x", iface->ep_out);
 		}
 		DEBUG_OUT("\n");
 	}
