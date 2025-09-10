@@ -443,7 +443,7 @@ void main()
     // reconfig output ports
     if ((cfg_pin & (1 << 4)) == 0) {
         DEBUG_OUT("pullups disabled\n");
-        P1_PU = 0x1f;
+        P1_PU = 0x3f;
         P3_PU = 0x03;
     }
     delay(50);
@@ -576,7 +576,7 @@ void main()
                 }
                 if (ledout_done == 0) {
                     uint8_t p3out = 0xfc;
-                    uint8_t p1out = 0xe0;
+                    uint8_t p1out = 0xc0;
                     uint8_t unidir = padforled.unified_dpad & 0x0f;
                     p3out ^= (unidir << 2);
                     if (padforled.btns[0] & 0x01) {
@@ -588,15 +588,12 @@ void main()
                     P3 &= p3out;// | 3;
                     P3 |= p3out;
                     if (padforled.btns[0] & 0x04) {
-                        p1out ^= 0x20;
-                    }
-                    if (padforled.btns[0] & 0x08) {
                         p1out ^= 0x40;
                     }
-                    if (padforled.btns[0] & 0x10) {
+                    if (padforled.btns[0] & 0x08) {
                         p1out ^= 0x80;
                     }
-                    P1 &= p1out | 0x1f;
+                    P1 &= p1out | 0x3f;
                     P1 |= p1out;
                     ledout_done = 1;
                 }
