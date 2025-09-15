@@ -139,6 +139,20 @@ uint8_t hexchar2bin(const __xdata char *str)
     return r;
 }
 
+void rb_out_hex2char(RingBuf *rb, uint8_t v)
+{
+    uint8_t d = v >> 4;
+    ringbuf_write(rb, (d < 10) ? '0' + d : 'a' - 10 + d);
+    d = v & 0x0f;
+    ringbuf_write(rb, (d < 10) ? '0' + d : 'a' - 10 + d);
+}
+void rb_out_hex1char(RingBuf *rb, uint8_t v)
+{
+    uint8_t d = v & 0x0f;
+    ringbuf_write(rb, (d < 10) ? '0' + d : 'a' - 10 + d);
+}
+
+
 #define MAX_NUM_KEYBOARDS 8
 int8_t __xdata g_kbd_devIndex[MAX_NUM_KEYBOARDS];
 uint8_t __xdata g_kbd_devAddr[MAX_NUM_KEYBOARDS];
@@ -218,6 +232,10 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
                 DEBUG_OUT("CALLBACK: %d gamepad(s) now connected\n", g_numKbds);
                 uint8_t r = hiddevice_start_input(devIndex, 0);
                 DEBUG_OUT("start input: %d\n", r);
+                rb_out_hex2char(&g_rb_out, dev->address);
+                ringbuf_write(&g_rb_out, 'P');
+                rb_out_hex2char(&g_rb_out, g_kbd_isXinput[idx] + 1);
+                ringbuf_write(&g_rb_out, ';');
             }
         }
     } else {
@@ -226,6 +244,10 @@ void usbAttachCallback(uint8_t devIndex, USBDevice *dev, uint8_t is_attach)
                 g_kbd_devIndex[i] = -1;
                 --g_numKbds;
                 DEBUG_OUT("CALLBACK: disconnect, %d keyboard(s) now connected\n", g_numKbds);
+                rb_out_hex2char(&g_rb_out, g_kbd_devAddr[i]);
+                ringbuf_write(&g_rb_out, 'P');
+                rb_out_hex2char(&g_rb_out, 255);
+                ringbuf_write(&g_rb_out, ';');
             }
         }
     }
@@ -266,7 +288,7 @@ void uartcmd_process(const __xdata char *cmd)
             ringbuf_write(&g_rb_out, 0x0a);
         }
     }
-    if (cmd[0] == 'P') {
+    if (cmd[0] == 'Q') {
         if (cmd[1] == '0') {
             g_poll_req = 0;
             g_poll_mode = 0;
@@ -296,26 +318,14 @@ void uartcmd_process(const __xdata char *cmd)
 #endif
 }
 
-void rb_out_hex2char(RingBuf *rb, uint8_t v)
-{
-    uint8_t d = v >> 4;
-    ringbuf_write(rb, (d < 10) ? '0' + d : 'a' - 10 + d);
-    d = v & 0x0f;
-    ringbuf_write(rb, (d < 10) ? '0' + d : 'a' - 10 + d);
-}
-void rb_out_hex1char(RingBuf *rb, uint8_t v)
-{
-    uint8_t d = v & 0x0f;
-    ringbuf_write(rb, (d < 10) ? '0' + d : 'a' - 10 + d);
-}
-
 void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
 {
-    uint8_t d, i;
+    uint8_t d, i, len;
     rb_out_hex2char(&g_rb_out, devaddr);
 
     ringbuf_write(&g_rb_out, 'G');
     rb_out_hex1char(&g_rb_out, pad->unified_dpad);
+    len = 4;
 
     if ((fmt & OUTPUT_FORMAT_WITHCOUNT) == 0) {
         ringbuf_write(&g_rb_out, 'N');
@@ -329,6 +339,7 @@ void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
                 d = 0;
             }
         }
+        len += 4;
     }
 
     switch (fmt) {
@@ -336,6 +347,7 @@ void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
             for (i = 0; i < pad->num_dpads; i++) {
                 ringbuf_write(&g_rb_out, 'H');
                 rb_out_hex1char(&g_rb_out, pad->dpads[i]);
+                len += 2;
             }
             break;
 
@@ -361,14 +373,16 @@ void output_gpstate(GamepadState *pad, uint8_t devaddr, uint8_t fmt)
     }
 
     if (fmt & OUTPUT_FORMAT_FULLLAYOUT) {
-        for (i = 0; i < pad->num_xys; i++) {
+        for (i = 0; i < pad->num_xys && len < 58; i++) {
             ringbuf_write(&g_rb_out, 'X');
             rb_out_hex2char(&g_rb_out, pad->xys[i].x);
             rb_out_hex2char(&g_rb_out, pad->xys[i].y);
+            len += 5;
         }
-        for (i = 0; i < pad->num_trigs; i++) {
+        for (i = 0; i < pad->num_trigs && len < 60; i++) {
             ringbuf_write(&g_rb_out, 'T');
             rb_out_hex2char(&g_rb_out, pad->trigs[i]);
+            len += 3;
         }
 
     }
