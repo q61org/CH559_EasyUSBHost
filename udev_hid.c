@@ -38,8 +38,10 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 	uint8_t curspec_count = 0;
 	uint8_t curspec_unit = 0;
 	uint16_t curspec_usagepage = 0;
+	DEBUG_OUT("parsing HID report, %d bytes length:\n", length);
 	while(i < length)
 	{
+		//clear_watchdog();
 		unsigned char j;
 		unsigned char id = report[i] & 0b11111100;
 		unsigned char size = report[i] & 0b00000011;
@@ -148,6 +150,10 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 			case REPORT_REPORT_SIZE:
 				DEBUG_OUT("Report size %lu\n", data);
 				curspec_size = data;
+				if (data > 256) {
+					DEBUG_OUT("Report size too large.\n");
+					goto Err;
+				}
 			break;
 			case REPORT_REPORT_ID:
 				DEBUG_OUT("Report ID %lu\n", data);
@@ -158,13 +164,24 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 			break;
 			case REPORT_REPORT_COUNT:
 				DEBUG_OUT("Report count %lu\n", data);
+				if (data > 256) {
+					DEBUG_OUT("Report count too large.\n");
+					goto Err;
+				}
 				curspec_count = data;
 			break;
 			default:
 				DEBUG_OUT("Unknown HID report identifier: 0x%02x (%i bytes) data: 0x%02lx\n", id, size, data);
+				if (id == 0 && size == 0 && data == 0) {
+					DEBUG_OUT("Unknown data, possible malformed report.\n");
+					goto Err;
+				}
 		};
 		i += size + 1;
 	}
+	return;
+Err:
+	dst_iface->spec.hid->num_reports = 0;
 }
 
 void DEBUG_OUT_JOYSTICK_REPORTS(UDevInterface *iface)
