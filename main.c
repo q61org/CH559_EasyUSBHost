@@ -567,6 +567,7 @@ void main()
             static uint16_t pollsn = 0;
             uint8_t len = pollHIDDevice(g_kbd_devIndex[targetKbdIndex], g_kbd_interfNo[targetKbdIndex], buf, sizeof(buf), &iface);
             ++pollsn;
+            uint8_t gp_updated = 0;
             if (len > 0) {
 #if 0
                 DEBUG_OUT("pollHIDDev %04x @%d [%d] ", pollsn, targetKbdIndex, len);
@@ -613,11 +614,14 @@ void main()
                 }
                 //DEBUG_OUT("%02x %02x %02x; ", st, lastoutsubtick8, st - lastoutsubtick8);
 
-                if (g_poll_mode || !gamepad_state_isequal(&g_state[targetKbdIndex], &padforled, out_fmt == 0)) {
-                    output_gpstate(&padforled, devaddr, out_fmt);
+                if (!gamepad_state_isequal(&g_state[targetKbdIndex], &padforled, out_fmt == 0)) {
                     gamepad_state_update(&g_state[targetKbdIndex], &padforled);
+                    gp_updated = 1;
                 }
                 //DEBUG_OUT("unidir: %02x, xys: %02x,%02x  %02x,%02x\n", unidir, padforled.xys[0].x, padforled.xys[0].y, padforled.xys[1].x, padforled.xys[1].y);
+            }
+            if (g_poll_mode || gp_updated) {
+                output_gpstate(&padforled, devaddr, out_fmt);
             }
         }
         need_out = 0;
