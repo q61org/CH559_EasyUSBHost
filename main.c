@@ -105,7 +105,7 @@ INTERRUPT_USING(uart1_isr, INT_NO_UART1, 2)
 
 // ================
 
-uint8_t __xdata g_poll_req = 0;
+volatile uint8_t __xdata g_poll_req = 0;
 uint8_t __xdata g_poll_mode = 0;
 
 INTERRUPT_USING(gpio_isr, INT_NO_GPIO, 3)
@@ -522,7 +522,7 @@ void main()
                     }
                 }
             }
-        } while (lastsubtick == g_subticks);
+        } while (lastsubtick == g_subticks && !g_poll_req);
         lastsubtick = g_subticks;
 
         if (g_leddecr == 0) {
@@ -551,7 +551,7 @@ void main()
             g_poll_req = 0;
         } else if (g_poll_mode == 0) {
             st = subticks8();
-            if ((uint8_t)(st - lastoutsubtick8) > 15) {
+            if ((uint8_t)(st - lastoutsubtick8) > ((g_numKbds == 1) ? 3 : 15)) {
                 need_out = 1;
                 lastoutsubtick8 = st;
             }
