@@ -100,6 +100,20 @@ uint8_t gamepad_parse_hid_data(UDevInterface *iface, __xdata uint8_t *data, uint
                     } else {
                         b = gamepad_get_nbit(data, bitpos, sp->size);
                         bitpos += sp->size;
+                        uint8_t r = sp->max - sp->min;
+                        if (r != 255) {
+                            uint16_t v = b - sp->min;
+                            v = (v << 8) - v;
+                            if (((r - 1) & r) == 0) {
+                                while (r > 1) {
+                                    v >>= 1;
+                                    r >>= 1;
+                                }
+                            } else {
+                                v /= r;
+                            }
+                            b = v & 0x0ff;
+                        }
                         b ^= 0x80;
                     }
                     if (xyi >= GAMEPAD_MAX_NUM_XY) continue;
@@ -219,26 +233,25 @@ void gamepad_get_unified_dpad(GamepadState *src, uint8_t *dst)
     if (*dst) return;
 
     for (uint8_t i = 0; i < src->num_xys; i++) {
-        if (src->xys[i].x < -64 || src->xys[i].x >= 64 || src->xys[i].y < -64 || src->xys[i].y >= 64) {
-            if (src->xys[i].x < -64)  {
-                *dst |= GAMEPAD_DPAD_LEFT;
-            } else if (src->xys[i].x >= 64) {
-                *dst |= GAMEPAD_DPAD_RIGHT;
-            }
-            if (src->xys[i].y < -64)  {
-                *dst |= GAMEPAD_DPAD_UP;
-            } else if (src->xys[i].y >= 64) {
-                *dst |= GAMEPAD_DPAD_DOWN;
-            }
+        if (src->xys[i].x < -64)  {
+            *dst |= GAMEPAD_DPAD_LEFT;
+        } else if (src->xys[i].x >= 64) {
+            *dst |= GAMEPAD_DPAD_RIGHT;
+        }
+        if (src->xys[i].y < -64)  {
+            *dst |= GAMEPAD_DPAD_UP;
+        } else if (src->xys[i].y >= 64) {
+            *dst |= GAMEPAD_DPAD_DOWN;
+        }
+        if (*dst != 0) {
             break;
         }
     }
-
 }
 
 uint8_t gamepad_state_isequal(GamepadState *a, GamepadState *b, uint8_t unified_only) 
 {
-    uint8_t i, k;
+    uint8_t i;
     if (a->num_dpads != b->num_dpads) return 0;
     if (a->num_xys != b->num_xys) return 0;
     if (a->num_trigs != b->num_trigs) return 0;

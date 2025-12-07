@@ -21,6 +21,8 @@ struct hid_report_spec_t
 {
 	uint8_t type : 4;
 	uint8_t size : 4;
+	uint8_t min;
+	uint8_t max;
 	uint8_t count;
 };
 typedef struct hid_report_spec_t __xdata HIDReportSpec;

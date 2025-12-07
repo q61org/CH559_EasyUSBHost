@@ -23,6 +23,8 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 		dst_iface->spec.hid->reports[joyi].type = curspec_type; \
 		dst_iface->spec.hid->reports[joyi].size = curspec_size; \
 		dst_iface->spec.hid->reports[joyi].count = curspec_count; \
+		dst_iface->spec.hid->reports[joyi].min = curspec_min; \
+		dst_iface->spec.hid->reports[joyi].max = curspec_max; \
 		dst_iface->spec.hid->num_reports = ++joyi; \
 	} else { \
 		DEBUG_OUT("too many hid reports!\n"); \
@@ -37,6 +39,8 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 	uint8_t curspec_size = 0;
 	uint8_t curspec_count = 0;
 	uint8_t curspec_unit = 0;
+	uint8_t curspec_min = 0;
+	uint8_t curspec_max = 0;
 	uint16_t curspec_usagepage = 0;
 	DEBUG_OUT("parsing HID report, %d bytes length:\n", length);
 	while(i < length)
@@ -96,9 +100,11 @@ void parseHIDDeviceReport(unsigned char __xdata *report, unsigned short length, 
 			break;
 			case REPORT_LOCAL_MINIMUM:
 				DEBUG_OUT("Logical min %lu\n", data);
+				curspec_min = data;
 			break;
 			case REPORT_LOCAL_MAXIMUM:
 				DEBUG_OUT("Logical max %lu\n", data);
+				curspec_max = data;
 			break;
 			case REPORT_PHYSICAL_MINIMUM:
 				DEBUG_OUT("Physical min %lu\n", data);
@@ -275,7 +281,7 @@ uint8_t pollHIDDevice(uint8_t devIndex, uint8_t usage, __xdata uint8_t *dst, uin
 	return 0;
 }
 
-
+/*
 uint8_t setHIDDeviceLED(uint8_t devIndex, uint8_t usage, uint8_t led)
 {
 	uint8_t rt = 0;
@@ -301,7 +307,7 @@ uint8_t setHIDDeviceLED(uint8_t devIndex, uint8_t usage, uint8_t led)
 		break;
 	}
 	return rt;
-}
+}*/
 
 uint8_t hiddevice_start_input(uint8_t devIndex, uint8_t usage)
 {
